@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Night Traffic Megacity</title>
+<style>
+  /* one visual world, dark by choice: a full-bleed pixel picture with a single caption line in its lower left corner */
+  :root {
+    color-scheme: dark;
+    --void: #07060a;
+    --ink: #17131c;
+    --amber: #b8982f;
+    --haze: #7a665c;
+    --violet: #7d62de;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  html, body { margin: 0; height: 100%; background: var(--void); color: var(--haze); overflow: hidden; }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: crosshair; touch-action: none; outline: none; }
+  #view:focus-visible { outline: 2px solid var(--violet); outline-offset: -2px; }
+  #note, #hint {
+    position: fixed; left: 16px; bottom: 14px; margin: 0; pointer-events: none;
+    font: 11px/1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--amber); text-shadow: 1px 1px 0 var(--void);
+  }
+  #hint { opacity: 0; transition: opacity 1.2s steps(6); color: var(--haze); }
+  body.ready #hint { opacity: 1; }
+  body.ready.seen #hint { opacity: 0; }
+  #stats { position: fixed; right: 16px; top: 12px; font: 11px/1.4 var(--mono); color: var(--violet); white-space: pre; text-align: right; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="view" tabindex="0" role="img" aria-label="An animated pixel-art city at night, seen from above an elevated highway. Move the pointer, or use the arrow keys, to look around."></canvas>
+<p id="note">sculpting the night</p>
+<p id="hint">move the pointer to look around</p>
+<div id="stats"></div>
+<script>/*PALETTE*/</script>
+<script>/*CAMPATH*/</script>
+<script>/*SHADERS*/</script>
+<script>/*PACK*/</script>
+<script>/*MAIN*/</script>
+</body>
+</html>

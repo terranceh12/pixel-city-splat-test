@@ -1,0 +1,217 @@
+/* Where the ships fly. A lane is a straight run from a to b, flown slowly; a ship fades out of the night at one end and back into it at
+   the other, then waits and comes again. Lanes are thrown at random and kept only if the whole run is clear: of the roads (never
+   under one, nor just over it), of the named towers, and of the air the eye swings through. The towers of the grid are cut down
+   afterwards wherever a lane passes over them. */
+const U = require('./util.js');
+
+function planLanes(W, o) {
+  const R = U.rng(o.seed || 77),
+    CELL = 2,
+    X0 = -260,
+    Z0 = -330,
+    NX = 260,
+    NZ = 240,
+    cells = new Array(NX * NZ);
+  // every blocker is a span of heights over a patch of ground
+  const mark = (x, z, rad, lo, hi) => {
+    const a0 = Math.max(0, Math.floor((x - rad - X0) / CELL)),
+      a1 = Math.min(NX - 1, Math.floor((x + rad - X0) / CELL)),
+      b0 = Math.max(0, Math.floor((z - rad - Z0) / CELL)),
+      b1 = Math.min(NZ - 1, Math.floor((z + rad - Z0) / CELL));
+    for (let a = a0; a <= a1; a++)
+      for (let b = b0; b <= b1; b++) {
+        const c = cells[a * NZ + b] || (cells[a * NZ + b] = []),
+          l = c[c.length - 1];
+        if (l && l[0] === lo && l[1] === hi) continue;
+        c.push([lo, hi]);
+      }
+  };
+  // a road: its deck, with room over and under it; its legs, all the way down; a named tower, from its top down
+  for (const rd of o.roads)
+    for (let i = 0; i < rd.path.pts.length; i += 2) {
+      const p = rd.path.pts[i];
+      mark(p[0], p[2], rd.hw + 0.6, Math.round(p[1]) - 3.2, Math.round(p[1]) + 3);
+    }
+  for (const p of o.piers) mark(p[0], p[1], p[3] + 0.8, -1e9, p[2]);
+  for (const b of o.kept)
+    for (let x = b[0]; x <= b[1] + 1; x += CELL) for (let z = b[2]; z <= b[3] + 1; z += CELL) mark(x, z, 0.5, -1e9, b[4] + 3);
+  const blocked = (x, z, lo, hi) => {
+    const a = Math.floor((x - X0) / CELL),
+      b = Math.floor((z - Z0) / CELL);
+    if (a < 0 || b < 0 || a >= NX || b >= NZ) return false;
+    const c = cells[a * NZ + b];
+    if (!c) return false;
+    for (let i = 0; i < c.length; i++) if (lo < c[i][1] && hi > c[i][0]) return true;
+    return false;
+  };
+  const SHIP = {
+    hauler: { half: 1.6, wide: 2.4, eye: 17, sc: [0.9, 1.25], sp: [0.55, 0.95] },
+    wing: { half: 1.2, wide: 4.9, eye: 19, sc: [0.9, 1.5], sp: [0.7, 1.2] },
+    dart: { half: 0.5, wide: 0.9, eye: 9, sc: [0.8, 1.5], sp: [1.3, 2.3] },
+    barge: { half: 1.2, wide: 1.3, eye: 15, sc: [0.8, 1.2], sp: [0.5, 0.9] },
+    liner: { half: 1.3, wide: 1.9, eye: 15, sc: [0.9, 1.4], sp: [0.8, 1.3] }
+  };
+  // is the run from a to b clear for a ship of this kind?
+  function clear(a, b, kind, sc, why) {
+    const k = SHIP[kind],
+      L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+      n = Math.ceil(L / 2),
+      hl = Math.hypot(b[0] - a[0], b[2] - a[2]) || 1,
+      side = k.wide * sc + 0.7, // its half width, and a little room
+      ux = (b[2] - a[2]) / hl,
+      uz = -(b[0] - a[0]) / hl,
+      ns = Math.max(1, Math.ceil(side / 1.4));
+    for (let i = 0; i <= n; i++) {
+      const f = i / n,
+        x = a[0] + (b[0] - a[0]) * f,
+        y = a[1] + (b[1] - a[1]) * f,
+        z = a[2] + (b[2] - a[2]) * f;
+      if (blocked(x, z, y - k.half * sc, y + k.half * sc)) {
+        if (why) why.push('blocked at ' + [x, y, z].map(v => v.toFixed(1)) + ' by ' + JSON.stringify(cells[Math.floor((x - X0) / CELL) * NZ + Math.floor((z - Z0) / CELL)]));
+        return false;
+      }
+      for (let j = 1; j <= ns; j++) {
+        const w = (side * j) / ns;
+        if (blocked(x + ux * w, z + uz * w, y - k.half * sc, y + k.half * sc) || blocked(x - ux * w, z - uz * w, y - k.half * sc, y + k.half * sc)) return false;
+      }
+      if (U.nearestEye(x, y, z) < k.eye * sc) {
+        if (why) why.push('eye ' + U.nearestEye(x, y, z).toFixed(1) + ' at ' + [x, y, z].map(v => v.toFixed(1)));
+        return false;
+      }
+    }
+    return true;
+  }
+  // one place along a run: is there room for the ship there? (ux, uz: across its heading)
+  function room(x, y, z, kind, sc, ux, uz) {
+    const k = SHIP[kind],
+      side = k.wide * sc + 0.7,
+      ns = Math.max(1, Math.ceil(side / 1.4)),
+      lo = y - k.half * sc,
+      hi = y + k.half * sc;
+    if (blocked(x, z, lo, hi) || U.nearestEye(x, y, z) < k.eye * sc) return false;
+    for (let j = 1; j <= ns; j++) {
+      const w = (side * j) / ns;
+      if (blocked(x + ux * w, z + uz * w, lo, hi) || blocked(x - ux * w, z - uz * w, lo, hi)) return false;
+    }
+    return true;
+  }
+  /* a ship that must be passing the place c at the start (it is in the painting there): the heading near head0 with the longest
+     clear run through c is taken, however short the run before it has to be */
+  function through(kind, c, head0, fan, sc, sp, least) {
+    least = least || [34, 40];
+    const k = SHIP[kind];
+    let best = null;
+    for (let h = head0 - fan; h <= head0 + fan + 1e-9; h += 0.025) {
+      const dx = Math.sin(h),
+        dz = Math.cos(h),
+        run = [0, 0];
+      for (let dir = 0; dir < 2; dir++) {
+        const sg = dir ? 1 : -1;
+        let t = 0;
+        while (t < 170 && room(c[0] + dx * sg * (t + 2), c[1], c[2] + dz * sg * (t + 2), kind, sc, dz, -dx)) t += 2;
+        run[dir] = t;
+      }
+      if (run[0] < least[0] || run[1] < least[1] || !room(c[0], c[1], c[2], kind, sc, dz, -dx)) continue;
+      const score = Math.min(run[0], 150) + Math.min(run[1], 150) - Math.abs(h - head0) * 30;
+      if (!best || score > best.score) best = { score, h, run };
+    }
+    if (!best) {
+      if (o.debug) {
+        const k2 = SHIP[kind];
+        console.log('   no run through', c, 'room here:', room(c[0], c[1], c[2], kind, sc, 1, 0), 'blocked:', blocked(c[0], c[2], c[1] - k2.half * sc, c[1] + k2.half * sc), 'eye', U.nearestEye(c[0], c[1], c[2]).toFixed(1), JSON.stringify(cells[Math.floor((c[0] - X0) / CELL) * NZ + Math.floor((c[2] - Z0) / CELL)]));
+      }
+      return false;
+    }
+    const dx = Math.sin(best.h),
+      dz = Math.cos(best.h),
+      before = best.run[0] - 1,
+      after = best.run[1] - 1,
+      a = [c[0] - dx * before, c[1], c[2] - dz * before],
+      b = [c[0] + dx * after, c[1], c[2] + dz * after],
+      len = before + after,
+      v = sp || (k.sp[0] + k.sp[1]) / 2,
+      gap = 26,
+      cycle = len / v + gap;
+    lanes.push({
+      tpl: kind,
+      a: a.map(x => +x.toFixed(2)),
+      b: b.map(x => +x.toFixed(2)),
+      sp: +v.toFixed(3),
+      gap,
+      u0: +(before / v / cycle).toFixed(4),
+      sc,
+      bob: 0.25,
+      port: Math.min(30, before * 0.8),
+      half: k.half * sc
+    });
+    return true;
+  }
+  const lanes = [];
+  /* through: the place it should be passing at the start; head: its heading (radians, 0 = toward +Z), give or take `fan` */
+  function add(kind, q) {
+    const k = SHIP[kind];
+    for (let tries = 0; tries < 4000; tries++) {
+      const sc = q.sc || R.range(k.sc[0], k.sc[1]),
+        head = (q.head === undefined ? R.range(0, 6.283) : q.head + R.range(-1, 1) * (q.fan === undefined ? 0.5 : q.fan)) + (tries > 1500 ? R.range(-1.5, 1.5) : 0),
+        dx = Math.sin(head),
+        dz = Math.cos(head),
+        jit = q.jit === undefined ? 0 : q.jit * (1 + tries / 600),
+        c = q.through
+          ? [q.through[0] + R.range(-jit, jit), q.through[1] + R.range(-jit, jit) * 0.4, q.through[2] + R.range(-jit, jit)]
+          : [R.range(q.x[0], q.x[1]), R.range(q.y[0], q.y[1]), R.range(q.z[0], q.z[1])],
+        before = q.before ? q.before * (tries > 300 ? R.range(0.4, 1) : 1) : R.range(110, 190),
+        after = q.after ? q.after * (tries > 300 ? R.range(0.6, 1) : 1) : R.range(110, 190),
+        slope = R.range(-0.02, 0.02),
+        a = [c[0] - dx * before, c[1] - slope * before, c[2] - dz * before],
+        b = [c[0] + dx * after, c[1] + slope * after, c[2] + dz * after];
+      const why = o.debug && q.through && tries % 400 === 0 ? [] : null;
+      if (!clear(a, b, kind, sc, why)) {
+        if (why) console.log('   try', tries, kind, 'head', head.toFixed(2), 'a', a.map(v => v.toFixed(0)), 'b', b.map(v => v.toFixed(0)), why[0] || 'side');
+        continue;
+      }
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+        sp = R.range(k.sp[0], k.sp[1]),
+        gap = R.range(12, 50),
+        cycle = len / sp + gap,
+        u0 = q.through ? before / sp / cycle : R();
+      lanes.push({
+        tpl: kind,
+        a: a.map(v => +v.toFixed(2)),
+        b: b.map(v => +v.toFixed(2)),
+        sp: +sp.toFixed(3),
+        gap: +gap.toFixed(1),
+        u0: +u0.toFixed(4),
+        sc: +sc.toFixed(2),
+        bob: +(0.15 + 0.25 * R()).toFixed(2),
+        port: 30,
+        half: k.half * sc
+      });
+      return true;
+    }
+    return false;
+  }
+  const PI = Math.PI;
+  // the ones that are in the painting, where the painting has them
+  const ok = [
+    through('hauler', [11.7, -18, 22], 0.5, 1.2, 1.15, 0.7),
+    through('wing', [-27.6, 25, -24], -1.9, 0.5, 1.5, 0.8),
+    through('dart', [-19.8, 24, -29.7], -1.95, 0.5, 1.4, 1.5),
+    through('dart', [-19.3, -5, -5.8], 0.9, 3.2, 1.3, 1.7, [16, 22])
+  ];
+  if (ok.indexOf(false) >= 0) console.log('  (a painted ship found no clear lane: ' + ok.join(' ') + ')');
+  // the rest: most of them down among the lower roads
+  const deep = (kind, y0, y1, n, head, fan) => {
+    for (let i = 0; i < n; i++) add(kind, { x: [-75, 80], y: [y0, y1], z: [-90, 58], head, fan });
+  };
+  deep('hauler', -58, -14, 4);
+  deep('barge', -66, -10, 6);
+  deep('liner', -52, -8, 5);
+  deep('wing', -46, -12, 3);
+  deep('dart', -60, -5, 12);
+  deep('dart', 6, 30, 2, PI * 0.5, 1.2);
+  deep('liner', 16, 40, 1, -PI * 0.5, 0.5);
+  // far traffic, small in the distance
+  for (let i = 0; i < 6; i++) add(i % 2 ? 'liner' : 'barge', { x: [-200, 200], y: [-30, 34], z: [-300, -130], head: i % 2 ? PI * 0.5 : -PI * 0.5, fan: 0.6 });
+  return lanes;
+}
+module.exports = { planLanes };

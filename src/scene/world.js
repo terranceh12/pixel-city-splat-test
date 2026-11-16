@@ -1,0 +1,304 @@
+/* The scene's workbench: one toolkit builder behind a recorder, the list of draw groups, the places where splats may be laid
+   (candidates, tested for visibility before anything is baked), and the box solids that will be handed to the sculptor. */
+const { makeRecorder, F, KIND, ROW } = require('../bake/ir.js');
+const PALETTE = require('../palette.js');
+const { makeCands, visibility } = require('./pvs.js');
+const U = require('./util.js');
+
+function makeWorld(kit, opt) {
+  const { makeBuilder, makeSculpt, KIT: K } = kit,
+    B0 = makeBuilder(opt.seed || 7, PALETTE.hex),
+    REC = makeRecorder(B0),
+    B = REC.B,
+    P = B.P,
+    cands = makeCands(),
+    solids = [],
+    groups = [],
+    tiles = new Map(),
+    done = []; // rows already taken out of the recorder: { rows, grp, n }
+  const EM = { em: true };
+  const W = {
+    kit,
+    K,
+    B,
+    B0,
+    REC,
+    P,
+    F,
+    KIND,
+    R: PALETTE.R,
+    opt,
+    cands,
+    solids,
+    groups,
+    rnd: U.rng(opt.seed || 7),
+    meta: { paths: [], lights: [], ships: [], tpl: {}, beams: [], floor: null, look: null },
+    FOG_CUT: -96
+  };
+  /* a draw group: pass 0 solid, 1 added light. tpl: drawn by the page with a transform of its own, not as scenery */
+  W.group = (name, pass, extra) => {
+    groups.push(Object.assign({ name, pass: pass || 0 }, extra || {}));
+    return groups.length - 1;
+  };
+  // scenery is grouped by tiles of ground, so the page can leave out what is off the screen and light each tile with the lamps near it
+  W.tile = (x, z, pass, size, tag) => {
+    size = size || 32;
+    const key = (pass || 0) + ':' + (tag || '') + ':' + size + ':' + Math.floor(x / size) + ':' + Math.floor(z / size);
+    let g = tiles.get(key);
+    if (g === undefined) {
+      g = W.group((tag || 'tile') + ' ' + Math.floor(x / size) + ',' + Math.floor(z / size), pass);
+      tiles.set(key, g);
+    }
+    return g;
+  };
+
+  /* ---------------- boxes ----------------
+     A box solid whose faces are laid on a square grid `res` apart, counted down from its top. Only faces some eye can see are laid, and
+     nothing below `ycut`. A tall box is cut into stacked pieces (each its own solid, so the sculptor's field stays quick).
+     s: { c, h, yaw, res, ycut, mat, grp, top (false: no roof), sides (false: none), occl (false: hides nothing), segH, bottom } */
+  W.box = s => {
+    const yaw = s.yaw || 0,
+      Ux = [Math.cos(yaw), 0, -Math.sin(yaw)],
+      Wz = [Math.sin(yaw), 0, Math.cos(yaw)],
+      c = s.c,
+      h = s.h,
+      res = s.res || U.resBox(c, h, yaw, s.px, s.lo, s.hi),
+      ytop = c[1] + h[1],
+      ylo = Math.max(c[1] - h[1], s.ycut === undefined ? W.FOG_CUT : s.ycut),
+      occ = s.occl !== false,
+      segH = s.segH || 12;
+    if (ytop <= ylo) return [];
+    const matObj = typeof s.mat === 'function' ? s.mat(res, ytop) : s.mat;
+    const sides = [];
+    if (s.sides !== false)
+      for (const [ax, sg, hh, ot, oh, end] of [
+        [Ux, 1, h[0], Wz, h[2], false],
+        [Ux, -1, h[0], Wz, h[2], false],
+        [Wz, 1, h[2], Ux, h[0], true],
+        [Wz, -1, h[2], Ux, h[0], true]
+      ]) {
+        if (end && s.ends === false) continue; // (a piece of a long run: its ends meet the next piece)
+        const n = [ax[0] * sg, 0, ax[2] * sg],
+          pc = [c[0] + n[0] * hh, c[1], c[2] + n[2] * hh];
+        if (!U.planeSeen(pc, n)) continue;
+        const nt = Math.max(1, Math.round((2 * oh) / res));
+        sides.push({ n, pc, ot, oh, nt });
+      }
+    const topSeen = s.top !== false && U.EYE_MAX_Y > ytop + 0.3,
+      botSeen = s.bottom === true && U.EYE_MIN_Y < c[1] - h[1] - 0.3,
+      rows = Math.max(1, Math.round((ytop - ylo) / res)),
+      nseg = Math.max(1, Math.ceil((ytop - ylo) / segH)),
+      made = [];
+    for (let k = 0; k < nseg; k++) {
+      const hi = ytop - ((ytop - ylo) * k) / nseg,
+        lo = ytop - ((ytop - ylo) * (k + 1)) / nseg,
+        start = cands.count();
+      for (let j = 0; j < rows; j++) {
+        const y = ytop - (j + 0.5) * res;
+        if (y > hi || y <= lo) continue;
+        for (const f of sides)
+          for (let i = 0; i < f.nt; i++) {
+            const t = -f.oh + ((i + 0.5) / f.nt) * 2 * f.oh;
+            cands.add(f.pc[0] + f.ot[0] * t, y, f.pc[2] + f.ot[2] * t, res, f.n[0], 0, f.n[2], occ);
+          }
+      }
+      for (const [seen, yy, ny] of [
+        [topSeen && k === 0, ytop, 1],
+        [botSeen && k === nseg - 1, c[1] - h[1], -1]
+      ]) {
+        if (!seen) continue;
+        const na = Math.max(1, Math.round((2 * h[0]) / res)),
+          nb = Math.max(1, Math.round((2 * h[2]) / res));
+        for (let a = 0; a < na; a++)
+          for (let b = 0; b < nb; b++) {
+            const la = -h[0] + ((a + 0.5) / na) * 2 * h[0],
+              lb = -h[2] + ((b + 0.5) / nb) * 2 * h[2];
+            cands.add(c[0] + Ux[0] * la + Wz[0] * lb, yy, c[2] + Ux[2] * la + Wz[2] * lb, res, 0, ny, 0, occ);
+          }
+      }
+      const count = cands.count() - start;
+      if (!count) continue;
+      const rec = {
+        c: [c[0], (hi + lo) / 2, c[2]],
+        h: [h[0], (hi - lo) / 2, h[2]],
+        Ux,
+        Wz,
+        res,
+        mat: matObj,
+        what: s.what || 'box',
+        grp: s.grp === undefined ? W.tile(c[0], c[2], 0) : s.grp,
+        start,
+        count
+      };
+      solids.push(rec);
+      made.push(rec);
+    }
+    return made;
+  };
+
+  /* ---------------- baking ---------------- */
+  /* ---------------- lights that belong to a wall (windows, roof-edge lamps) ----------------
+     Laid as candidates too, so that the ones no eye can see are never made; they hide nothing themselves. */
+  const sets = [];
+  W.lightSet = (c, h, res, grp) => {
+    const rec = { c, h, res, grp, start: cands.count(), count: 0, info: [] };
+    sets.push(rec);
+    return rec;
+  };
+  // n: the way it faces; s: its half size; kind, ph, sp: how it behaves
+  W.lightAdd = (rec, x, y, z, n, pal, s, kind, ph, sp, big) => {
+    cands.add(x, y, z, rec.res, n[0], n[1], n[2], false);
+    rec.info.push(pal, s, kind, ph, sp, big ? 1 : 0);
+    rec.count++;
+  };
+  W.layLights = () => {
+    const { X, Y, Z, NV } = cands.arrays(),
+      vis = W.vis;
+    let made = 0;
+    for (const r of sets)
+      for (let k = 0; k < r.count; k++) {
+        const i = r.start + k;
+        if (!vis[i]) continue;
+        const q = k * 6,
+          s = r.info[q + 1];
+        REC.tag({ group: r.grp, kind: r.info[q + 2], flags: F.EM | (r.info[q + 5] ? F.BIG : 0), ph: r.info[q + 3], sp: r.info[q + 4] });
+        B.disc(X[i], Y[i], Z[i], [NV[i * 3] / 127, NV[i * 3 + 1] / 127, NV[i * 3 + 2] / 127], s, s * 0.4, P[r.info[q]], 3, EM);
+        made++;
+      }
+    return made;
+  };
+  W.cull = o => {
+    W.vis = visibility(cands, Object.assign({ solids: solids.concat(sets) }, o));
+    let n = 0;
+    for (let i = 0; i < W.vis.length; i++) n += W.vis[i];
+    const by = {};
+    for (const r of solids.concat(sets)) {
+      const k = r.what || 'lights',
+        e = by[k] || (by[k] = [0, 0]);
+      e[0] += r.count;
+      for (let i = r.start; i < r.start + r.count; i++) e[1] += W.vis[i];
+    }
+    return { cands: W.vis.length, seen: n, by };
+  };
+  // a sculptor set for the night: a low moon from the right and in front, a little sky, short contact shade
+  W.sculptor = o => {
+    const S = K.sculpt(makeSculpt(B));
+    S.sun = B.norm([0.59, 0.74, 0.33]);
+    S.amb = 0.1;
+    S.sky = 0.1;
+    S.sunK = 0.42;
+    S.aoR = 0.14;
+    S.aoK = 1.3;
+    S.shLen = 14;
+    S.wob = 0.03;
+    Object.assign(S, o || {});
+    S.emit = (solid, n0, n1) => {
+      if (solid && solid.grp !== undefined) for (let i = n0; i < n1; i++) REC.setGroup(i, solid.grp);
+    };
+    return S;
+  };
+  // hand every box to a sculptor (only the candidates that can be seen), bake, and keep the rows
+  W.bakeBoxes = () => {
+    const S = W.sculptor(),
+      { X, Y, Z } = cands.arrays(),
+      vis = W.vis;
+    let laid = 0;
+    for (const r of solids) {
+      let any = false;
+      for (let i = r.start; i < r.start + r.count; i++)
+        if (vis[i]) {
+          any = true;
+          break;
+        }
+      if (!any) continue;
+      const c = r.c,
+        h = r.h,
+        Ux = r.Ux,
+        Wz = r.Wz,
+        p = S.solid(
+          [0, 0, 0],
+          1,
+          (x, y, z) => {
+            const dx = x - c[0],
+              dz = z - c[2],
+              qx = Math.abs(dx * Ux[0] + dz * Ux[2]) - h[0],
+              qy = Math.abs(y - c[1]) - h[1],
+              qz = Math.abs(dx * Wz[0] + dz * Wz[2]) - h[2];
+            return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0);
+          },
+          (res, f) => {
+            for (let i = r.start; i < r.start + r.count; i++) if (vis[i]) f(X[i], Y[i], Z[i]);
+          },
+          r.mat,
+          { res: r.res }
+        );
+      p.bc = c;
+      p.br = Math.hypot(h[0], h[1], h[2]);
+      p.grp = r.grp;
+      laid++;
+    }
+    S.bake();
+    W.take();
+    return laid;
+  };
+  // move what the recorder holds into the finished pile
+  W.take = () => {
+    const t = REC.take();
+    B0.take();
+    if (t.n) done.push(t);
+    return t.n;
+  };
+  /* the finished rows sorted into their groups: [{ name, pass, rows, n, meta }] */
+  W.finish = () => {
+    W.take();
+    const cnt = new Int32Array(groups.length);
+    for (const t of done) for (let i = 0; i < t.n; i++) cnt[t.grp[i]]++;
+    const out = groups.map((g, i) => ({ name: g.name, pass: g.pass, n: 0, rows: new Float32Array(cnt[i] * ROW), meta: g }));
+    for (const t of done)
+      for (let i = 0; i < t.n; i++) {
+        const g = out[t.grp[i]];
+        g.rows.set(t.rows.subarray(i * ROW, i * ROW + ROW), g.n * ROW);
+        g.n++;
+      }
+    return out;
+  };
+
+  /* ---------------- laying splats by hand (lights, trails, dust) ---------------- */
+  // a glow: added light, a soft ball. o: { kind, ph, sp, rg, ex, big }
+  W.glow = (g, x, y, z, s, pal, a, o) => {
+    o = o || {};
+    REC.tag({
+      group: g,
+      kind: o.kind || 0,
+      flags: F.EM | F.ADD | (o.big ? F.BIG : 0),
+      ph: o.ph,
+      sp: o.sp,
+      rg: o.rg,
+      ex: o.ex
+    });
+    if (o.ax) B.axial(x, y, z, o.ax, o.sa || s, s, P[pal], a, EM);
+    else B.iso(x, y, z, s, P[pal], a, EM);
+  };
+  // a solid light: a small bright dab that hides what is behind it. o: { n (the way it faces), kind, ph, sp, rg, ex, big, sn }
+  W.lamp = (g, x, y, z, s, pal, o) => {
+    o = o || {};
+    REC.tag({ group: g, kind: o.kind || 0, flags: F.EM | (o.big ? F.BIG : 0), ph: o.ph, sp: o.sp, rg: o.rg, ex: o.ex });
+    if (o.n) B.disc(x, y, z, o.n, s, o.sn || s * 0.5, P[pal], 3, EM);
+    else if (o.ax) B.stick(x, y, z, o.ax, o.sl || s, s, P[pal], 3, EM);
+    else B.iso(x, y, z, s, P[pal], 3, EM);
+  };
+  // a dark rod (an antenna, a strut, a cable): sticks laid end to end. o: { pal, n (how many) }
+  W.rod = (g, a, b, r, pal, o) => {
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+      L = Math.hypot(d[0], d[1], d[2]) || 1,
+      ax = [d[0] / L, d[1] / L, d[2] / L],
+      n = (o && o.n) || Math.max(1, Math.round(L / Math.max(r * 5, 0.25)));
+    for (let i = 0; i < n; i++) {
+      const f = (i + 0.5) / n;
+      REC.tag({ group: g, flags: o && o.big ? F.BIG : 0 });
+      B.stick(a[0] + d[0] * f, a[1] + d[1] * f, a[2] + d[2] * f, ax, (L / n) * 0.62, r, P[pal], 3);
+    }
+  };
+  return W;
+}
+module.exports = { makeWorld };
