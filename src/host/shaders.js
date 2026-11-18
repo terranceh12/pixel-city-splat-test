@@ -6,6 +6,8 @@ uniform vec4 u_fade;       // far fade start, far fade end, fog pool start, fog 
 uniform float u_fogU;      // a thin even haze everywhere, by distance
 uniform vec3 u_fogLo;
 uniform vec3 u_fogHi;
+uniform vec4 u_haze;       // the colour far things take on (the air between, blue-violet), and how fast with distance
+uniform vec3 u_warm;       // the light of whatever lies under the fog
 uniform sampler2D u_floor; // the light that comes up from the streets far below
 uniform vec4 u_floorRect;  // x0, z0, 1 / width, 1 / depth
 float fogTau(vec3 eye, vec3 p) {
@@ -21,8 +23,10 @@ vec3 floorLight(vec2 xz) { return textureLod(u_floor, (xz - u_floorRect.xy) * u_
 vec3 fogColour(vec3 p, vec3 fl) {
   float h = clamp((p.y - u_fog.x) * u_fog.y * 0.22, 0.0, 1.0);
   float pool = 1.0 - smoothstep(u_fade.z, u_fade.w, length(p.xz));
-  return (mix(u_fogLo, u_fogHi, h) + fl * (1.0 - 0.7 * h)) * pool;
-}`;
+  float deep = clamp(0.3 - (p.y - u_fog.x) * u_fog.y * 0.4, 0.0, 1.0);   // 0 above the fog's level, 1 well down in it
+  return (mix(u_fogLo, u_fogHi, h) + fl * (1.0 - 0.7 * h) + u_warm * (deep * deep)) * pool;
+}
+float hazeAt(float dist) { return 1.0 - exp(-u_haze.w * dist); }`;
 
   const splatVS = `#version 300 es
 precision highp float;
@@ -199,17 +203,19 @@ void main() {
       add += u_lc[i] * (att * att * (0.2 + 0.8 * ndl));
     }
     float up = exp(-max(0.0, pw.y - u_fog.x) * u_fog.w) * (lit ? 1.0 - 0.75 * max(0.0, aw.y) : 0.6);
-    add += fl * (up * 0.6);
+    add += (fl + u_warm * 0.55) * (up * 0.6);
     col += add * (0.32 + 1.3 * dot(col, vec3(0.30, 0.55, 0.15)));
   } else col *= bright;
   float F = 1.0 - exp(-fogTau(u_eye, pw));
   float far = smoothstep(u_fade.x, u_fade.y, length(pw.xz));
+  float Hz = hazeAt(length(dv));
 #ifdef ADDITIVE
-  col *= (1.0 - F) * (1.0 - far) * (1.0 - u_gfade);
+  col *= (1.0 - F) * (1.0 - 0.8 * Hz) * (1.0 - far) * (1.0 - u_gfade);
   v_aux = vec3(0.0, 1.0, al);
 #else
-  if (em) { F *= 0.72; far *= far; }
-  col = mix(col, fogColour(pw, fl), F) * (1.0 - far);
+  if (em) { F *= 0.72; far *= far; Hz *= 0.45; }
+  col = mix(col, fogColour(pw, fl), F);
+  col = mix(col, u_haze.rgb, max(Hz, far));   // the farther, the more it is the colour of the air; at the city's edge, nothing else
   // (what is all but lost in the dark at the edge of the city is not given an inked outline against it)
   v_aux = vec3(far > 0.6 ? 1.0 : min(0.98, pc.z / u_linFar), em ? 1.0 : 0.0, cut);
 #endif
@@ -282,11 +288,15 @@ void main() {
   if (d.y < -0.002) {
     float q = exp(-a) + (-d.y) / (u_fog.z * H);
     float ys = u_fog.x - H * log(q);
-    vec3 p = u_eye + d * ((ys - u_eye.y) / d.y);
-    col = fogColour(p, floorLight(p.xz));
+    float L = (ys - u_eye.y) / d.y;
+    vec3 p = u_eye + d * L;
+    float pool = 1.0 - smoothstep(u_fade.z, u_fade.w, length(p.xz));
+    // looking down into it, the light from below shows through: the steeper, the more
+    col = fogColour(p, floorLight(p.xz)) + u_warm * (pow(-d.y, 3.0) * 1.15 * pool);
+    col = mix(col, u_haze.rgb, hazeAt(max(L - 220.0, 0.0)));
   } else {
-    float tau = u_fog.z * H / max(d.y, 0.002) * exp(-a) + u_fogU * 420.0 * exp(-d.y * 7.0);
-    col = u_fogHi * (1.0 - exp(-tau)) * u_sky;
+    // above the horizon: the same air, thinning upward into the black
+    col = u_haze.rgb * (1.0 - exp(-u_haze.w * 1500.0 * exp(-d.y * 9.0))) * u_sky;
   }
   o_col = vec4(col, 1.0);
   // lit haze counts as something that is there (so what stands in front of it is not inked round as if against the void), and says so in b

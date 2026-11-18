@@ -1,56 +1,56 @@
 /* The city's palette: 48 colours, the most the toolkit's PixelLook shader resolves.
-   Hues are taken from the reference painting (plum blacks, charcoal slate, mauve haze, golden yellow, amber, red, violet) and cleaned
-   up into ramps that run dark to light. Index 0 is the void; PixelLook keeps it for the background, so no solid is ever painted with it. */
+   Hues are taken from the reference painting (plum blacks, slate blue, blue-violet haze, golden yellow, amber, red, violet), pushed
+   apart for contrast, and cleaned up into ramps that run dark to light. Two slots (8, 27) hold a green and a blue for shop lights. Index 0 is the void; PixelLook keeps it for the background, so no solid is ever painted with it. */
 const NeonPalette = (() => {
   const hex = [
-    0x07060a, // 0  void
-    0x100d14, // 1  structure (plum black) ...
-    0x17131c, // 2
-    0x1f1a25, // 3
-    0x28222e, // 4
-    0x322b38, // 5
-    0x3e3643, // 6
-    0x4d4450, // 7
-    0x605560, // 8
-    0x1a1c28, // 9  slate (cool faces, glass) ...
-    0x242838, // 10
-    0x30364a, // 11
-    0x414963, // 12
-    0x5a6480, // 13
-    0x241c20, // 14 haze (warm mauve fog) ...
-    0x30262a, // 15
-    0x3e3234, // 16
-    0x4e403f, // 17
-    0x62514b, // 18
-    0x7a665c, // 19
-    0x33260f, // 20 amber / yellow ...
-    0x57421a, // 21
-    0x856a26, // 22
-    0xb8982f, // 23
-    0xe3c43c, // 24
-    0xf6e27a, // 25
-    0xfff7cf, // 26
-    0x3f1a10, // 27 orange / red ...
-    0x6e2d18, // 28
-    0xa44a20, // 29
-    0xd9702a, // 30
-    0xf59c45, // 31
-    0x45142a, // 32 crimson / pink ...
-    0x7c1f3e, // 33
-    0xb83258, // 34
-    0xec5f86, // 35
-    0xffa3bd, // 36
-    0x20163a, // 37 violet ...
-    0x37266a, // 38
-    0x563ca6, // 39
-    0x7d62de, // 40
-    0xb09cff, // 41
-    0x12303f, // 42 cyan ...
-    0x1f5f7c, // 43
-    0x3aa0c6, // 44
-    0xa8ecff, // 45
-    0xcfc9a6, // 46 warm window white
-    0xf2f6ff //  47 cool white (plasma core)
+    0x05040a, // 0  void
+    0x0d0a10, // 1  structure (plum black) ...
+    0x16111b, // 2
+    0x211a29, // 3
+    0x2f2539, // 4
+    0x40334d, // 5
+    0x564564, // 6
+    0x715e80, // 7
+    0x3ee07f, // 8  green (street lights)
+    0x111a2e, // 9  slate (cool faces, glass) ...
+    0x1b2947, // 10
+    0x293e66, // 11
+    0x3f588e, // 12
+    0x6c86bd, // 13
+    0x17132c, // 14 haze (blue-violet) ...
+    0x211b3f, // 15
+    0x2e2654, // 16
+    0x3e346b, // 17
+    0x534784, // 18
+    0x6f62a0, // 19
+    0x2c1d08, // 20 amber / yellow ...
+    0x573d10, // 21
+    0x8a6618, // 22
+    0xc49a22, // 23
+    0xf2cc2e, // 24
+    0xffe86e, // 25
+    0xfffbd6, // 26
+    0x2f6bff, // 27 blue (street lights)
+    0x7a2a12, // 28 orange / red ...
+    0xb4481a, // 29
+    0xea6c1e, // 30
+    0xffa040, // 31
+    0x4a1028, // 32 crimson / pink ...
+    0x8a1a3c, // 33
+    0xd62a52, // 34
+    0xff5c8a, // 35
+    0xffa8c4, // 36
+    0x1c1240, // 37 violet ...
+    0x35207a, // 38
+    0x5a3cc0, // 39
+    0x8566f5, // 40
+    0xb9a6ff, // 41
+    0x0e3040, // 42 cyan ...
+    0x1a6688, // 43
+    0x2fb4e0, // 44
+    0xa4f0ff, // 45
+    0xd8cfa0, // 46 warm window white
+    0xf4f8ff //  47 cool white (plasma core)
   ];
   // ramps, dark to light, as palette indices
   const R = {
@@ -61,7 +61,7 @@ const NeonPalette = (() => {
     warm: [1, 14, 15, 16, 17],
     deck: [1, 2, 3, 4],
     amber: [20, 21, 22, 23, 24, 25, 26],
-    orange: [27, 28, 29, 30, 31],
+    orange: [28, 28, 29, 30, 31],
     pink: [32, 33, 34, 35, 36],
     violet: [37, 38, 39, 40, 41],
     cyan: [42, 43, 44, 45, 47],

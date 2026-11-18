@@ -33,7 +33,7 @@ function makeWorld(kit, opt) {
     groups,
     rnd: U.rng(opt.seed || 7),
     meta: { paths: [], lights: [], ships: [], tpl: {}, beams: [], floor: null, look: null },
-    FOG_CUT: -96
+    FOG_CUT: -170
   };
   /* a draw group: pass 0 solid, 1 added light. tpl: drawn by the page with a transform of its own, not as scenery */
   W.group = (name, pass, extra) => {
@@ -297,6 +297,41 @@ function makeWorld(kit, opt) {
       const f = (i + 0.5) / n;
       REC.tag({ group: g, flags: o && o.big ? F.BIG : 0 });
       B.stick(a[0] + d[0] * f, a[1] + d[1] * f, a[2] + d[2] * f, ax, (L / n) * 0.62, r, P[pal], 3);
+    }
+  };
+  /* a pipe from a to b: rings of discs facing outward, shaded by hand on a ramp (moonlight from S.sun's side, a little from the sky).
+     Only the part of the round an eye can see is laid. o: { ramp, collar (a wider, darker band every so far), tile } */
+  const SUN = B.norm([0.59, 0.74, 0.33]);
+  W.pipe = (a, b, r, o) => {
+    o = o || {};
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+      L = Math.hypot(d[0], d[1], d[2]),
+      ax = [d[0] / L, d[1] / L, d[2] / L],
+      s1 = B.norm([ax[2], 0, -ax[0]]),
+      s2 = [ax[1] * s1[2] - ax[2] * s1[1], ax[2] * s1[0] - ax[0] * s1[2], ax[0] * s1[1] - ax[1] * s1[0]],
+      ramp = o.ramp || [1, 2, 3, 5, 6, 7];
+    let s = 0,
+      n = 0;
+    while (s < L) {
+      const c = [a[0] + ax[0] * s, a[1] + ax[1] * s, a[2] + ax[2] * s],
+        res = U.resAt(c[0], c[1], c[2], o.px || 2, 0.09, 2.4),
+        col = o.collar && s % o.collar < res * 1.01,
+        rr = col ? r * 1.22 : r,
+        k = Math.max(6, Math.round((6.283 * rr) / res)),
+        g = W.tile(c[0], c[2], 0, o.tile || 48, 'pipe');
+      for (let i = 0; i < k; i++) {
+        const an = ((i + (n & 1) * 0.5) / k) * 6.283,
+          nx = s1[0] * Math.cos(an) + s2[0] * Math.sin(an),
+          ny = s1[1] * Math.cos(an) + s2[1] * Math.sin(an),
+          nz = s1[2] * Math.cos(an) + s2[2] * Math.sin(an);
+        if (ny < -0.55) continue;
+        const lit = 0.1 + 0.6 * Math.max(0, nx * SUN[0] + ny * SUN[1] + nz * SUN[2]) + 0.2 * Math.max(0, ny) - (col ? 0.12 : 0),
+          tone = ramp[Math.max(0, Math.min(ramp.length - 1, Math.floor(lit * ramp.length)))];
+        REC.tag({ group: g, flags: res > 0.8 ? F.BIG : 0 });
+        B.disc(c[0] + nx * rr, c[1] + ny * rr, c[2] + nz * rr, [nx, ny, nz], Math.max(res, (6.283 * rr) / k) * 0.6, res * 0.2, P[tone], 3);
+      }
+      s += res;
+      n++;
     }
   };
   return W;

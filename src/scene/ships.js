@@ -334,4 +334,137 @@ module.exports = function buildShips(W) {
       engine(T, [0.3, -0.18, 4.08], 0.2, o);
     }
   );
+  /* ---------------- freighter: a spine hung with cargo boxes, a bridge over the bow, four engines on a beam astern ---------------- */
+  template(
+    'freighter',
+    { res: 0.17, rad: 10, seed: 26 },
+    S => {
+      const cab = hullMat(W, { ramp: RAMP.hull, pitch: 0.3, p: 0.55, win: [24, 25, 25, 46], seed: 61, rows: [2, 3], y0: 0.1 }),
+        ramps = [RAMP.warm, RAMP.slate, RAMP.plum, RAMP.hullS, RAMP.warmD, RAMP.hull, RAMP.slateD];
+      S.box([0, 0, 0.3], [0.42, 0.38, 5.7], DK2);
+      S.box([0, 1.0, -4.7], [0.95, 0.5, 0.85], cab);
+      S.box([0, 1.36, -5.1], [1.7, 0.1, 0.28], DK);
+      for (let i = 0; i < 6; i++) {
+        const z = -3.0 + i * 1.3;
+        for (const sx of [-1, 1]) {
+          const h = 0.42 + 0.5 * U.h4(i, sx, 7, 3);
+          S.box([sx * 1.02, -0.3 + h, z], [0.56, h, 0.58], { r: ramps[(i * 2 + (sx > 0 ? 3 : 0)) % 7] });
+          if (U.h4(i, sx, 9, 1) > 0.45) S.box([sx * 1.02, -0.3 + 2 * h + 0.3, z], [0.5, 0.3, 0.52], { r: ramps[(i + (sx > 0 ? 5 : 1)) % 7] });
+        }
+        S.box([0, -0.82, z], [0.5, 0.42, 0.58], { r: ramps[(i + 2) % 7] });
+      }
+      S.box([0, 0.05, 5.6], [2.0, 0.22, 0.5], DK);
+      for (const sx of [-1.6, -0.6, 0.6, 1.6]) S.box([sx, 0.05, 6.1], [0.34, 0.36, 0.55], DK2);
+    },
+    T => {
+      const ids = [30, 44, 34, 24, 8, 40];
+      for (let i = 0; i < 6; i++) {
+        const z = -3.0 + i * 1.3;
+        for (const sx of [-1, 1]) {
+          lamp(T, [sx * 1.6, 0.1, z - 0.3], ids[(i + (sx > 0 ? 2 : 0)) % 6], { n: [sx, 0, 0], s: 0.05, steady: true, halo: false });
+          lamp(T, [sx * 1.6, 0.1, z + 0.3], 46, { n: [sx, 0, 0], s: 0.035, halo: false, ph: i, sp: 0.6 });
+        }
+      }
+      // gantry arches over the cargo, a flood lamp under each
+      for (const z of [-2.4, 0.2, 2.8]) {
+        W.rod(T.gS, [-1.7, 0.2, z], [-1.7, 2.0, z], 0.05, 4, { big: true });
+        W.rod(T.gS, [1.7, 0.2, z], [1.7, 2.0, z], 0.05, 4, { big: true });
+        W.rod(T.gS, [-1.7, 2.0, z], [1.7, 2.0, z], 0.05, 4, { big: true });
+        lamp(T, [0, 1.92, z], 26, { n: [0, -1, 0], s: 0.07, hp: 21, hk: 14, ha: 0.42, sp: 0.5, ph: z });
+      }
+      lamp(T, [-1.72, 1.5, -5.1], 34, { blink: true });
+      lamp(T, [1.72, 1.5, -5.1], 8, { blink: true, ph: 1.5, hp: 42 });
+      lamp(T, [0, 1.75, -4.4], 47, { blink: true, sp: 3.4, ph: 0.7, s: 0.05 });
+      lamp(T, [0, 0.9, -5.58], 26, { s: 0.08, hp: 22, hk: 9, ha: 0.55 });
+      W.glow(T.gG, 0, 1.1, -4.9, 1.3, 21, 0.4, { kind: K.FLICKER, sp: 1.1, ph: 0 });
+      const o = { core: 47, mid: 31, rim: 30, halo: 28, len: 3.3, sparks: 6, k: 13, spark: [26, 25, 31, 36] };
+      for (const sx of [-1.6, -0.6, 0.6, 1.6]) engine(T, [sx, 0.05, 6.67], 0.22, o);
+      T.lights.push({ p: [0, 2.6, 0], r: 8, c: [0.6, 0.5, 0.3] });
+    }
+  );
+
+  /* ---------------- tanker: four pressure spheres in a row on a keel, ringed with frames, a pod at the bow ---------------- */
+  template(
+    'tanker',
+    { res: 0.17, rad: 8.5, seed: 27 },
+    S => {
+      for (let i = 0; i < 4; i++) {
+        S.ball([0, 0, -3.1 + i * 2.05], [1.02, 1.02, 0.96], { r: i % 2 ? RAMP.hullS : RAMP.pale, b: 0.04 });
+        if (i < 3) S.box([0, 0, -2.08 + i * 2.05], [1.12, 1.12, 0.07], DK);
+      }
+      S.box([0, -1.12, 0], [0.3, 0.2, 4.7], DK);
+      S.box([0, 1.1, 0], [0.16, 0.06, 4.3], DK2);
+      S.ball([0, -0.25, -5.0], [0.6, 0.48, 0.8], { r: RAMP.slate, b: 0.06 });
+      S.box([0, -0.1, 4.65], [0.95, 0.7, 0.42], DK2);
+    },
+    T => {
+      for (let i = 0; i < 4; i++) {
+        const z = -3.1 + i * 2.05;
+        lamp(T, [0, 1.2, z], 30, { blink: true, sp: 2.6, ph: -i * 0.9, s: 0.05 });
+        for (const sx of [-1, 1]) lamp(T, [sx * 1.04, 0, z], i % 2 ? 23 : 8, { n: [sx, 0, 0], s: 0.05, halo: false, sp: 0.7, ph: i + sx });
+        lamp(T, [0, -1.04, z], 44, { n: [0, -1, 0], s: 0.05, hp: 42, sp: 2, ph: i * 1.4 });
+      }
+      for (const x of [-0.22, 0, 0.22]) lamp(T, [x, -0.12, -5.74], 44, { n: [0, 0.2, -1], s: 0.08, steady: true, hp: 42, ha: 0.35 });
+      lamp(T, [0, 0.36, -5.0], 34, { blink: true, s: 0.04 });
+      const o = { core: 47, mid: 45, rim: 44, halo: 43, len: 3.6, sparks: 8, k: 16 };
+      engine(T, [-0.45, -0.1, 5.1], 0.3, o);
+      engine(T, [0.45, -0.1, 5.1], 0.3, o);
+      T.lights.push({ p: [0, -2.2, 0], r: 7, c: [0.2, 0.5, 0.6] });
+    }
+  );
+
+  /* ---------------- tug: a blunt pusher, mostly engine, an amber beacon turning on its roof ---------------- */
+  template(
+    'tug',
+    { res: 0.1, rad: 3.4, seed: 28 },
+    S => {
+      S.box([0, 0, 0], [0.55, 0.42, 0.9], hullMat(W, { ramp: RAMP.warm, pitch: 0.22, p: 0.5, win: [24, 25, 46], seed: 71, rows: [0] }));
+      S.box([0, -0.05, -1.04], [0.78, 0.5, 0.1], DK2);
+      S.box([0, 0.58, -0.25], [0.34, 0.18, 0.4], { r: RAMP.slate, b: 0.06 });
+      S.box([0, 0, 1.0], [0.42, 0.36, 0.2], DK);
+    },
+    T => {
+      lamp(T, [0, 0.84, -0.25], 31, { blink: true, sp: 5, s: 0.06, hp: 28, hk: 7 });
+      lamp(T, [-0.3, 0.2, -1.16], 26, { s: 0.05, hp: 22, hk: 8, ha: 0.5 });
+      lamp(T, [0.3, 0.2, -1.16], 26, { s: 0.05, hp: 22, hk: 8, ha: 0.5 });
+      for (const x of [-0.18, 0.18]) lamp(T, [x, 0.6, -0.66], 44, { n: [0, 0.2, -1], s: 0.07, steady: true, hp: 42, ha: 0.3 });
+      engine(T, [0, 0, 1.22], 0.3, { core: 47, mid: 41, rim: 40, halo: 38, len: 2.4, sparks: 6, k: 14, spark: [26, 36, 41, 47] });
+      for (const sx of [-0.5, 0.5]) engine(T, [sx, -0.2, 1.0], 0.1, { core: 47, mid: 41, rim: 40, halo: 38, len: 1, sparks: 1, k: 7 });
+    }
+  );
+
+  /* ---------------- lift: a glass car for the megatower's face. Its glazed front looks out along +Z; the page carries it up and down ---------------- */
+  template(
+    'lift',
+    { res: 0.075, rad: 2.2, seed: 29 },
+    S => {
+      const { REC, F } = W;
+      // dark frame; the panes between its bars are lit glass: bright where the ceiling light catches it, tinted toward the floor
+      const glass = {
+        r: RAMP.slateD,
+        tex(x, y, z, ny, tone, nx, nz) {
+          REC.tag(null);
+          if (Math.abs(ny) > 0.6 || nz < -0.5) return undefined;
+          const u = Math.abs(nx) > 0.6 ? z : x,
+            hu = Math.abs(nx) > 0.6 ? 0.34 : 0.52;
+          if (Math.abs(u) > hu - 0.09 || (Math.abs(nx) < 0.6 && Math.abs(u) < 0.035) || Math.abs(y + 0.3) < 0.04 || Math.abs(y) > 0.72) return undefined;
+          REC.tag({ kind: W.KIND.STILL, flags: F.EM });
+          return y > 0.42 ? 45 : y > -0.3 ? 44 : 43;
+        }
+      };
+      S.box([0, 0, 0], [0.52, 0.82, 0.34], glass);
+      S.box([0, 0.95, -0.05], [0.4, 0.13, 0.26], DK);
+      S.box([0, -0.9, 0], [0.56, 0.08, 0.38], DK2);
+    },
+    T => {
+      // who is riding: two or three dark figures against the glass; the ceiling light; a lamp above and below
+      for (const x of [-0.26, 0.08, 0.3]) W.rod(T.gS, [x, -0.72, 0.36], [x, -0.26 + (x > 0.2 ? -0.1 : 0), 0.36], 0.05, 2, { n: 2, big: true });
+      lamp(T, [0, 0.6, 0.36], 26, { n: [0, 0, 1], s: 0.12, steady: true, hp: 22, hk: 6, ha: 0.5 });
+      lamp(T, [0, 1.12, 0], 34, { blink: true, sp: 3, s: 0.05 });
+      lamp(T, [0, -1.02, 0.1], 47, { n: [0, -1, 0], s: 0.06, hp: 43, hk: 7, ha: 0.45, sp: 0.4 });
+      W.glow(T.gG, 0, 0, 0.5, 1.5, 43, 0.5, { kind: K.FLICKER, sp: 0.6, ph: 0 });
+      W.glow(T.gG, 0, 0.1, 0.4, 0.7, 44, 0.45, { kind: K.FLICKER, sp: 0.9, ph: 1 });
+      T.lights.push({ p: [0, 0, 1.4], r: 5.5, c: [0.3, 0.62, 0.72] });
+    }
+  );
 };

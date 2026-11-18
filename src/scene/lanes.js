@@ -49,7 +49,10 @@ function planLanes(W, o) {
     wing: { half: 1.2, wide: 4.9, eye: 19, sc: [0.9, 1.5], sp: [0.7, 1.2] },
     dart: { half: 0.5, wide: 0.9, eye: 9, sc: [0.8, 1.5], sp: [1.3, 2.3] },
     barge: { half: 1.2, wide: 1.3, eye: 15, sc: [0.8, 1.2], sp: [0.5, 0.9] },
-    liner: { half: 1.3, wide: 1.9, eye: 15, sc: [0.9, 1.4], sp: [0.8, 1.3] }
+    liner: { half: 1.3, wide: 1.9, eye: 15, sc: [0.9, 1.4], sp: [0.8, 1.3] },
+    freighter: { half: 1.9, wide: 2.0, eye: 19, sc: [1, 1.3], sp: [0.5, 0.75] },
+    tanker: { half: 1.5, wide: 1.5, eye: 17, sc: [1, 1.3], sp: [0.5, 0.75] },
+    tug: { half: 0.9, wide: 1.0, eye: 9, sc: [0.9, 1.2], sp: [0.5, 0.75] }
   };
   // is the run from a to b clear for a ship of this kind?
   function clear(a, b, kind, sc, why) {
@@ -74,6 +77,7 @@ function planLanes(W, o) {
         const w = (side * j) / ns;
         if (blocked(x + ux * w, z + uz * w, y - k.half * sc, y + k.half * sc) || blocked(x - ux * w, z - uz * w, y - k.half * sc, y + k.half * sc)) return false;
       }
+      if (o.ground && y - k.half * sc < o.ground(x, z)) return false; // (over the city proper a ship keeps above the roofs)
       if (U.nearestEye(x, y, z) < k.eye * sc) {
         if (why) why.push('eye ' + U.nearestEye(x, y, z).toFixed(1) + ' at ' + [x, y, z].map(v => v.toFixed(1)));
         return false;
@@ -190,10 +194,48 @@ function planLanes(W, o) {
     }
     return false;
   }
+  /* a pack: ships that keep station on one another down one level lane, low in a ravine.
+     members: [{ kind, off: [to the right, up, astern], sc }]; q: { x, y, z (ranges for the middle of the run), head, fan, len } */
+  function pack(members, q) {
+    for (let tries = 0; tries < 6000; tries++) {
+      const head = q.head + R.range(-1, 1) * (q.fan || 0.1),
+        fx = Math.sin(head),
+        fz = Math.cos(head),
+        rx = -fz,
+        rz = fx,
+        c = [R.range(q.x[0], q.x[1]), R.range(q.y[0], q.y[1]), R.range(q.z[0], q.z[1])],
+        half = (q.len / 2) * (tries > 2500 ? R.range(0.5, 0.9) : R.range(0.85, 1.1)),
+        runs = members.map(m => {
+          const o = [c[0] + rx * m.off[0] - fx * m.off[2], c[1] + m.off[1], c[2] + rz * m.off[0] - fz * m.off[2]];
+          return { a: [o[0] - fx * half, o[1], o[2] - fz * half], b: [o[0] + fx * half, o[1], o[2] + fz * half] };
+        });
+      if (!runs.every((r, i) => clear(r.a, r.b, members[i].kind, members[i].sc || 1))) continue;
+      const sp = R.range(0.5, 0.72),
+        gap = R.range(14, 30),
+        u0 = R();
+      runs.forEach((r, i) =>
+        lanes.push({
+          tpl: members[i].kind,
+          a: r.a.map(v => +v.toFixed(2)),
+          b: r.b.map(v => +v.toFixed(2)),
+          sp: +sp.toFixed(3),
+          gap: +gap.toFixed(1),
+          u0: +u0.toFixed(4),
+          sc: members[i].sc || 1,
+          bob: 0.08,
+          port: Math.min(30, half * 0.5),
+          half: SHIP[members[i].kind].half * (members[i].sc || 1),
+          pack: 1
+        })
+      );
+      return true;
+    }
+    return false;
+  }
   const PI = Math.PI;
   // the ones that are in the painting, where the painting has them
   const ok = [
-    through('hauler', [11.7, -18, 22], 0.5, 1.2, 1.15, 0.7),
+    through('hauler', [15, -18, 23], 2.6, 0.6, 1.15, 0.7, [4, 40]), // (it comes out from under the island's wall)
     through('wing', [-27.6, 25, -24], -1.9, 0.5, 1.5, 0.8),
     through('dart', [-19.8, 24, -29.7], -1.95, 0.5, 1.4, 1.5),
     through('dart', [-19.3, -5, -5.8], 0.9, 3.2, 1.3, 1.7, [16, 22])
@@ -210,8 +252,58 @@ function planLanes(W, o) {
   deep('dart', -60, -5, 12);
   deep('dart', 6, 30, 2, PI * 0.5, 1.2);
   deep('liner', 16, 40, 1, -PI * 0.5, 0.5);
+  // freighters in company, down in the ravines
+  const packs = [
+    pack(
+      [
+        { kind: 'tug', off: [0, 0.6, -13], sc: 1.1 },
+        { kind: 'freighter', off: [-4.2, 0, 0], sc: 1.15 },
+        { kind: 'freighter', off: [4.2, -1.2, 5], sc: 1.15 }
+      ],
+      { x: [34, 62], y: [-58, -51], z: [-20, 40], head: PI, fan: 0.12, len: 210 }
+    ),
+    pack(
+      [
+        { kind: 'tanker', off: [0, 0, 0], sc: 1.25 },
+        { kind: 'tanker', off: [1.5, -1, 15], sc: 1.25 },
+        { kind: 'tanker', off: [-1.5, -2, 30], sc: 1.25 }
+      ],
+      { x: [28, 66], y: [-104, -84], z: [-40, 30], head: 0, fan: 0.14, len: 200 }
+    ),
+    pack(
+      [
+        { kind: 'tanker', off: [0, 0, 0], sc: 1.1 },
+        { kind: 'tug', off: [2.6, 0.8, 9], sc: 1 }
+      ],
+      { x: [-31, -23], y: [-58, -50], z: [40, 64], head: 0, fan: 0.04, len: 96 }
+    ),
+    pack(
+      [
+        { kind: 'freighter', off: [0, 0, 0], sc: 1.2 },
+        { kind: 'tanker', off: [-4.6, -1.5, 9], sc: 1.1 },
+        { kind: 'tug', off: [4, 1, 8], sc: 1 },
+        { kind: 'tug', off: [0, 2.4, 19], sc: 1 }
+      ],
+      { x: [36, 66], y: [-80, -71], z: [-70, 20], head: 0.1, fan: 0.2, len: 190 }
+    ),
+    pack(
+      [
+        { kind: 'freighter', off: [0, 0, 0], sc: 1.1 },
+        { kind: 'freighter', off: [0.8, -1.6, 17], sc: 1.1 }
+      ],
+      { x: [-48, -34], y: [-92, -52], z: [-75, -55], head: -2.83, fan: 0.05, len: 96 }
+    ),
+    pack(
+      [
+        { kind: 'tanker', off: [-3, 0, 0], sc: 1 },
+        { kind: 'tanker', off: [3, 0.6, 4], sc: 1 }
+      ],
+      { x: [30, 70], y: [-36, -31], z: [30, 70], head: PI / 2, fan: 1.6, len: 60 }
+    )
+  ];
+  if (packs.indexOf(false) >= 0) console.log('  (a freighter pack found no clear lane: ' + packs.join(' ') + ')');
   // far traffic, small in the distance
-  for (let i = 0; i < 6; i++) add(i % 2 ? 'liner' : 'barge', { x: [-200, 200], y: [-30, 34], z: [-300, -130], head: i % 2 ? PI * 0.5 : -PI * 0.5, fan: 0.6 });
+  for (let i = 0; i < 6; i++) add(i % 2 ? 'liner' : 'barge', { x: [-200, 200], y: [16, 40], z: [-300, -130], head: i % 2 ? PI * 0.5 : -PI * 0.5, fan: 0.6 });
   return lanes;
 }
 module.exports = { planLanes };

@@ -303,6 +303,14 @@
   /* a ship's place: nose down its own -Z, carried along a straight lane from a to b. It fades out of the haze at one end and back
      into it at the other, waits, and comes again. */
   const ships = (META.ships || []).map((s, i) => {
+    if (s.lift) {
+      // a lift car: no lane, only a shaft. It keeps the way it faces and rides up and down, waiting a while at each end
+      const cy = Math.cos(s.yaw || 0),
+        sy = Math.sin(s.yaw || 0),
+        sc = s.sc || 1,
+        M = new Float32Array([cy * sc, 0, -sy * sc, 0, 0, sc, 0, 0, sy * sc, 0, cy * sc, 0, s.x, s.y0, s.z, 1]);
+      return { s, len: 1, f: [-sy, 0, -cy], r: [cy, 0, -sy], u: [0, 1, 0], M, sc, tpl: META.tpl[s.tpl], cycle: s.per, fade: 0, on: true, pos: [s.x, s.y0, s.z], i };
+    }
     const d = [s.b[0] - s.a[0], s.b[1] - s.a[1], s.b[2] - s.a[2]],
       len = Math.hypot(d[0], d[1], d[2]),
       f = [d[0] / len, d[1] / len, d[2] / len],
@@ -329,8 +337,16 @@
   });
   function placeShips(t) {
     for (const h of ships) {
-      const s = h.s,
-        tt = (((t + s.u0 * h.cycle) % h.cycle) + h.cycle) % h.cycle,
+      const s = h.s;
+      if (s.lift) {
+        const u = (((t / s.per + s.ph) % 1) + 1) % 1,
+          tri = u < 0.5 ? u * 2 : 2 - u * 2,
+          e = clamp((tri - 0.07) / 0.86, 0, 1),
+          y = s.y0 + (s.y1 - s.y0) * e * e * (3 - 2 * e);
+        h.pos[1] = h.M[13] = y;
+        continue;
+      }
+      const tt = (((t + s.u0 * h.cycle) % h.cycle) + h.cycle) % h.cycle,
         dist = tt * s.sp;
       h.on = dist <= h.len;
       if (!h.on) continue;
@@ -512,6 +528,8 @@
     gl.uniform4f(u.u_fog, LOOK.fogY, 1 / LOOK.fogH, LOOK.fogRho, 1 / LOOK.upH);
     gl.uniform4f(u.u_fade, LOOK.far0, LOOK.far1, LOOK.pool0, LOOK.pool1);
     gl.uniform1f(u.u_fogU, LOOK.fogU || 0);
+    gl.uniform4fv(u.u_haze, LOOK.haze);
+    gl.uniform3fv(u.u_warm, LOOK.warm);
     gl.uniform3fv(u.u_fogLo, LOOK.fogLo);
     gl.uniform3fv(u.u_fogHi, LOOK.fogHi);
     gl.uniform4f(u.u_floorRect, FL.rect[0], FL.rect[1], 1 / FL.rect[2], 1 / FL.rect[3]);
