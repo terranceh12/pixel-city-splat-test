@@ -55,7 +55,9 @@ module.exports = function buildCity(W) {
       way: [
         [-128, -11, -112],
         [-30, -11, 0],
-        [-4, -11, 36] // (it runs into the island and stops there)
+        [-0.4, -11, 26.5], // (into the island, where it turns toward the eye...)
+        [1.35, -11, 40], // (... and runs on inside it, along the east face: seen through the slit there, ISLAND_SLIT)
+        [1.35, -11, 110]
       ],
       rad: 30,
       lanes: [
@@ -320,17 +322,18 @@ module.exports = function buildCity(W) {
     FX = [1, 0, 0],
     LIFT_X = [3.15, 4.2, 5.3, 6.4, 7.45],
     LIFT_Z = [0.6, -3.6],
+    LIFT_SC = 0.8, // (the cars' size: the template is modelled at 1, a little large against the tower)
     lifts = [];
   // each shaft: two steady guide rails with the car between them
   LIFT_X.forEach((x, i) => {
     for (const e of [-0.44, 0.44])
       PT.riser(W, x + e, zf, W.FOG_CUT, MG.top, { sig: 0.014, pal: i % 2 ? 39 : 12, sp: 0.5, wl: 40, ph: 10 + i * 0.3, n: FZ });
-    lifts.push({ tpl: 'lift', lift: 1, x, z: zf + 0.36, yaw: 0, y0: -132, y1: MG.top - 2.2, per: 44 + 9 * ((i * 3) % 5), ph: (i * 0.37) % 1, sc: 1 });
-    if (i % 2 === 0) lifts.push({ tpl: 'lift', lift: 1, x, z: zf + 0.36, yaw: 0, y0: -132, y1: MG.top - 2.2, per: 61 + 5 * i, ph: (0.5 + i * 0.21) % 1, sc: 1, far: 1 });
+    lifts.push({ tpl: 'lift', lift: 1, x, z: zf + 0.36 * LIFT_SC, yaw: 0, y0: -132, y1: MG.top - 2.2, per: 44 + 9 * ((i * 3) % 5), ph: (i * 0.37) % 1, sc: LIFT_SC });
+    if (i % 2 === 0) lifts.push({ tpl: 'lift', lift: 1, x, z: zf + 0.36 * LIFT_SC, yaw: 0, y0: -132, y1: MG.top - 2.2, per: 61 + 5 * i, ph: (0.5 + i * 0.21) % 1, sc: LIFT_SC, far: 1 });
   });
   LIFT_Z.forEach((z, i) => {
     for (const e of [-0.44, 0.44]) PT.riser(W, xr, z + e, -27, MG.top, { sig: 0.014, pal: 39, sp: 0.5, wl: 40, ph: 10 + i * 0.4, n: FX });
-    lifts.push({ tpl: 'lift', lift: 1, x: xr + 0.36, z, yaw: Math.PI / 2, y0: -24, y1: MG.top - 2.2, per: 39 + 8 * i, ph: 0.3 + 0.4 * i, sc: 1 });
+    lifts.push({ tpl: 'lift', lift: 1, x: xr + 0.36 * LIFT_SC, z, yaw: Math.PI / 2, y0: -24, y1: MG.top - 2.2, per: 39 + 8 * i, ph: 0.3 + 0.4 * i, sc: LIFT_SC });
   });
   // one tall hairline of light down the face, as painted
   PT.riser(W, 6.92, zf, W.FOG_CUT, MG.top, { sig: 0.03, pal: 24, sp: -3, wl: 34, ph: 10.2, glow: { pal: 21, a: 0.12, sig: 0.3 }, n: FZ });
@@ -338,7 +341,58 @@ module.exports = function buildCity(W) {
   // ---- the island: the wall under the near highway, its lower shoulder to the west with sunken landing courts ----
   const ports = [], // aprons a ship may be parked on
     parked = []; // ...and the ships parked: drawn by the page like the others, standing still
-  PT.cliff(W, { a: [2.6, 2.5], b: [2.6, 112], out: [1, 0], back: 3.2, top: -1.75, seed: 11, roads: lowerRoads, kept, near: true, step: 3, ports: 0.2, what: 'island', portsOut: ports });
+  /* its east face. Where the lower road L1 runs on inside the island toward the eye, the face's upper storeys stand on a slit: a thin
+     window line along the face, through which the road's traffic is seen going by. (L1 is kept out of this cliff's roads, so it is not
+     given halls here: the slit is the road's room.) */
+  const SLIT = { z0: 16, z1: 120, floor: -11.5, top: -10.1 },
+    L1road = roads.find(r => r.path === lower[0].path),
+    eastBays = PT.cliff(W, {
+      a: [2.6, 2.5],
+      b: [2.6, 112],
+      out: [1, 0],
+      back: 3.2,
+      top: (x, z) => (z > SLIT.z0 && z < SLIT.z1 ? SLIT.floor : -1.75),
+      seed: 11,
+      roads: lowerRoads.filter(r => r !== L1road),
+      kept,
+      near: true,
+      step: 3,
+      ports: 0.2,
+      what: 'island',
+      portsOut: ports
+    });
+  const SLIT_RAMPS = [RAMP.cliff, RAMP.cliffS, RAMP.plumD, RAMP.mega, RAMP.slateD],
+    SLIT_STYLES = ['sparse', 'resid', 'columns', 'office', 'bands'];
+  eastBays.forEach(b => {
+    if (b.top !== SLIT.floor) return;
+    // the storeys over the slit: flush with the face (nothing may hang over it), lit underneath
+    PT.tower(W, {
+      x: 1.0,
+      z: b.z,
+      w: 3.2,
+      d: b.w,
+      top: -1.75,
+      bottom: SLIT.top,
+      under: true,
+      ramp: SLIT_RAMPS[Math.floor(h4(b.i, 3, 61, 1) * SLIT_RAMPS.length)],
+      win: [WIN.warm, WIN.pale, WIN.cool][Math.floor(h4(b.i, 4, 61, 1) * 3)],
+      style: SLIT_STYLES[Math.floor(h4(b.i, 5, 61, 1) * SLIT_STYLES.length)],
+      lit: 1.4,
+      chunk: 40,
+      px: 5,
+      lo: 0.24,
+      wpx: 2.6,
+      tile: 48,
+      what: 'island'
+    });
+    // the slit's lintel: a run of small lamps just inside it, so it reads as a lit line even where the road is out of sight
+    const seen = U.seenFrom(2.6, SLIT.top, b.z, 2);
+    if (seen > 1e8) return;
+    const sp = clamp((1.3 * seen) / U.F_ART, 0.25, 2),
+      gl = W.tile(2.6, b.z, 0, 64, 'lit');
+    for (let u = -b.w / 2 + sp / 2; u < b.w / 2; u += sp)
+      W.lamp(gl, 2.45, SLIT.top - 0.08, b.z + u, Math.min(0.06, sp * 0.18), h4(b.i, Math.round(u * 4), 62, 1) < 0.85 ? 46 : 26, { kind: K.TWINKLE, sp: 0.6, ph: u * 0.7, big: true });
+  });
   PT.cliff(W, { a: [-5, 112], b: [-5, -6.5], out: [-1, 0], back: 4.4, top: -1.75, bottom: -24, seed: 12, roads: lowerRoads, step: 1.2, ports: 0, bay: [9, 16], what: 'island' });
   PT.tower(W, { x: 0.85, z: -2, w: 2.9, d: 9, top: -1.75, noWin: true, ramp: RAMP.cliff, what: 'island' });
   const courtAt = (z, i) => i % 3 === 1 && z > 14 && z < 64,
@@ -503,7 +557,7 @@ module.exports = function buildCity(W) {
   /* ------------------------------------------------------------------ the rest of the city ------------------------------------------------------------------ */
   const lanes = planLanes(W, { roads: roads.concat(pipeRuns), piers: legs, kept, ground: (x, z) => (inRavine(x, z, 0) ? -1e9 : 12), seed: 4242, debug: !!process.env.LANES });
   meta.ships = lanes.concat(lifts, parked);
-  const air = lanes.map(l => ({ path: U.makePath([l.a, l.b], { step: 1.5 }), hw: l.half * 2.2 + 2.4, drop: l.half + 2.4 }));
+  const air = lanes.filter(l => !l.below).map(l => ({ path: U.makePath([l.a, l.b], { step: 1.5 }), hw: l.half * 2.2 + 2.4, drop: l.half + 2.4 }));
   const stats = { towers: 0, cut: 0, landmarks: 0, floor: 0, signs: 0, street: 0 };
   const LANDMARK = ['twist', 'stack', 'gate', 'terrace', 'needle', 'twin', 'dock', 'diagrid', 'crown', 'twist', 'terrace', 'twin', 'stack', 'needle'],
     dockPark = [];

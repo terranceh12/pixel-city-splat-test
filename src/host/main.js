@@ -570,7 +570,8 @@
   function drawList(P, pass, t) {
     const u = P.u;
     let lastM = null;
-    const one = (g, M, sc, fade, x, y, z, rad, lit) => {
+    let lastFog = -1;
+    const one = (g, M, sc, fade, x, y, z, rad, lit, fog) => {
       if (!sees(x, y, z, rad)) return;
       if ((ONLY && g.name.indexOf(ONLY) < 0) || (NOT && g.name.indexOf(NOT) >= 0)) return;
       if (M !== lastM) {
@@ -579,6 +580,11 @@
         lastM = M;
       }
       gl.uniform1f(u.u_gfade, fade);
+      fog = fog === undefined ? 1 : fog;
+      if (fog !== lastFog && u.u_gfog) {
+        gl.uniform1f(u.u_gfog, fog);
+        lastFog = fog;
+      }
       if (pass === 0) {
         const n = lit ? lampsFor(x, y, z, rad) : 0;
         gl.uniform1i(u.u_nl, n);
@@ -601,7 +607,7 @@
       if (!h.on || h.fade > 0.995) continue;
       const g = groups[pass === 0 ? h.tpl.solid : h.tpl.glow];
       if (!g || !g.count) continue;
-      one(g, h.M, h.sc, h.fade, h.pos[0], h.pos[1], h.pos[2], h.tpl.rad * h.sc, false);
+      one(g, h.M, h.sc, h.fade, h.pos[0], h.pos[1], h.pos[2], h.tpl.rad * h.sc, false, h.s.fogK);
     }
     if (pass === 1)
       for (const h of beams) {

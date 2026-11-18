@@ -52,7 +52,9 @@ module.exports = function buildShips(W) {
     solids(S);
     S.bake();
     const T = { gS, gG, lights: [], R: U.rng(o.seed || 5), res: o.res, haloK: o.haloK };
+    if (o.nofog) W.orFlags = W.F.NOFOG; // (its lights must carry through the deep fog)
     extras(T);
+    W.orFlags = 0;
     const n = W.take();
     W.meta.tpl[name] = { solid: gS, glow: gG, rad: o.rad, lights: T.lights };
     return n;
@@ -286,6 +288,7 @@ module.exports = function buildShips(W) {
   dartShip('dart-near', 0.045, false, 0.6);
   dartShip('dart-cold', 0.085, true);
 
+
   /* ---------------- barge: a flat bed of boxes behind a cab ---------------- */
   template(
     'barge',
@@ -492,4 +495,40 @@ module.exports = function buildShips(W) {
       T.lights.push({ p: [0, 0, 1.4], r: 5.5, c: [0.3, 0.62, 0.72] });
     }
   );
+
+  /* ---------------- racer: the fast traffic far down, between the city's floor and the city below it. A needle with swept fins and
+     two long plumes; a streak of spent plasma trails it. Flown far off and deep in the fog, so its lights carry through the fog and
+     its hull hardly shows ---------------- */
+  const racer = (name, hue) =>
+    template(
+      name,
+      { res: 0.085, rad: 5, seed: 30, nofog: true, haloK: 2.2 },
+      S => {
+        S.ball([0, 0, 0], [0.24, 0.15, 1.35], { r: RAMP.hull, b: 0.05 });
+        S.box([-0.42, -0.02, 0.62], [0.36, 0.03, 0.24], DK, { ax: yawAx(0.5) });
+        S.box([0.42, -0.02, 0.62], [0.36, 0.03, 0.24], DK, { ax: yawAx(-0.5) });
+        S.box([0, 0.15, 0.9], [0.025, 0.13, 0.22], DK);
+      },
+      T => {
+        // a bright head: seen from far above it is what shows (they never come nearer the eye than about 150 units, so their lights
+        // are sized for that). Every light is a bright one: the dark ends of the ramps would show as dark against the lit fog
+        lamp(T, [0, 0.03, -1.36], 47, { s: 0.24, hp: hue.rim, hk: 7, ha: 0.8 });
+        lamp(T, [0, 0.14, -0.4], hue.lite, { s: 0.1, steady: true, n: [0, 1, -0.4], hp: hue.rim, hk: 6, ha: 0.45 });
+        lamp(T, [-0.72, 0, 0.78], 35, { blink: true, s: 0.1, sp: 3.4, hk: 6, hp: 34 });
+        lamp(T, [0.72, 0, 0.78], 45, { blink: true, s: 0.1, sp: 3.4, ph: 1.2, hk: 6, hp: 44 });
+        const o = { core: 47, mid: hue.lite, rim: hue.mid, halo: hue.rim, len: 7.5, sparks: 8, k: 16, fast: 2.8, spark: [47, hue.lite, hue.mid, 26] };
+        engine(T, [-0.13, 0, 1.3], 0.12, o);
+        engine(T, [0.13, 0, 1.3], 0.12, o);
+        // the streak it leaves: a thread of hard light that thins as it trails off, inside a wider, fainter wake
+        const SC = [47, 47, 47, hue.lite, hue.lite, hue.lite, hue.mid, hue.mid, hue.mid, hue.mid, hue.mid, hue.mid, hue.mid, hue.mid, hue.mid, hue.mid];
+        SC.forEach((pal, k) =>
+          W.lamp(T.gS, 0, 0, 1.5 + k * 0.75, 0.3 * (1 - k / 20), pal, { ax: AZ, sl: 0.45, kind: K.FLICKER, sp: 23 - k, ph: k * 0.7, big: true })
+        );
+        W.glow(T.gG, 0, 0, 1.3 + 4, 0.55, hue.mid, 0.7, { ax: AZ, sa: 4, kind: K.FLICKER, sp: 17, ph: 2 });
+        W.glow(T.gG, 0, 0, 1.3 + 8, 1.2, hue.rim, 0.4, { ax: AZ, sa: 8, kind: K.FLICKER, sp: 9, ph: 0 });
+        W.glow(T.gG, 0, 0, 0, 2.4, hue.rim, 0.5, { kind: K.FLICKER, sp: 13, ph: 1 });
+      }
+    );
+  racer('racer', { lite: 45, mid: 44, rim: 43 });
+  racer('racer-p', { lite: 36, mid: 35, rim: 34 });
 };

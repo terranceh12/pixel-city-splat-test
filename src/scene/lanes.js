@@ -32,9 +32,11 @@ function planLanes(W, o) {
       const p = rd.path.pts[i];
       mark(p[0], p[2], rd.hw + 0.6, Math.round(p[1]) - 3.2, Math.round(p[1]) + 3);
     }
-  for (const p of o.piers) mark(p[0], p[1], p[3] + 0.8, -1e9, p[2]);
+  // (legs and what is kept stand down to the city's floor, FOG_CUT; under it the air is open, and the fast traffic flies there)
+  const FLOOR = W.FOG_CUT;
+  for (const p of o.piers) mark(p[0], p[1], p[3] + 0.8, FLOOR - 2, p[2]);
   for (const b of o.kept)
-    for (let x = b[0]; x <= b[1] + 1; x += CELL) for (let z = b[2]; z <= b[3] + 1; z += CELL) mark(x, z, 0.5, -1e9, b[4] + 3);
+    for (let x = b[0]; x <= b[1] + 1; x += CELL) for (let z = b[2]; z <= b[3] + 1; z += CELL) mark(x, z, 0.5, FLOOR - 2, b[4] + 3);
   const blocked = (x, z, lo, hi) => {
     const a = Math.floor((x - X0) / CELL),
       b = Math.floor((z - Z0) / CELL);
@@ -58,6 +60,8 @@ function planLanes(W, o) {
   SHIP['wing-near'] = SHIP.wing;
   SHIP['dart-near'] = SHIP.dart;
   SHIP['liner-near'] = SHIP.liner;
+  SHIP.racer = { half: 0.4, wide: 0.9, eye: 9, sc: [1.6, 2.2], sp: [15, 22] };
+  SHIP['racer-p'] = SHIP.racer;
   // is the run from a to b clear for a ship of this kind?
   function clear(a, b, kind, sc, why) {
     const k = SHIP[kind],
@@ -81,7 +85,7 @@ function planLanes(W, o) {
         const w = (side * j) / ns;
         if (blocked(x + ux * w, z + uz * w, y - k.half * sc, y + k.half * sc) || blocked(x - ux * w, z - uz * w, y - k.half * sc, y + k.half * sc)) return false;
       }
-      if (o.ground && y - k.half * sc < o.ground(x, z)) return false; // (over the city proper a ship keeps above the roofs)
+      if (o.ground && y + k.half * sc > FLOOR && y - k.half * sc < o.ground(x, z)) return false; // (over the city proper a ship keeps above the roofs, or goes under its floor)
       if (U.nearestEye(x, y, z) < k.eye * sc) {
         if (why) why.push('eye ' + U.nearestEye(x, y, z).toFixed(1) + ' at ' + [x, y, z].map(v => v.toFixed(1)));
         return false;
@@ -392,6 +396,45 @@ function planLanes(W, o) {
   if (near.indexOf(false) >= 0) console.log('  (a close pass found no clear lane: ' + near.join(' ') + ')');
   // far traffic, small in the distance
   for (let i = 0; i < 6; i++) add(i % 2 ? 'liner' : 'barge', { x: [-200, 200], y: [16, 40], z: [-300, -130], head: i % 2 ? PI * 0.5 : -PI * 0.5, fan: 0.6 });
+  /* fast traffic far down, between the city's floor and the city under it: a string of ships one after another down one lane.
+     kinds: the templates, in turn; q: { x, y, z (ranges for the middle of the run), head, fan, before, after, sp, gap, sc } */
+  function stream(kinds, n, q) {
+    const kind = kinds[0];
+    for (let tries = 0; tries < 3000; tries++) {
+      const head = q.head + R.range(-1, 1) * (q.fan || 0.05),
+        dx = Math.sin(head),
+        dz = Math.cos(head),
+        c = [R.range(q.x[0], q.x[1]), R.range(q.y[0], q.y[1]), R.range(q.z[0], q.z[1])],
+        a = [c[0] - dx * q.before, c[1], c[2] - dz * q.before],
+        b = [c[0] + dx * q.after, c[1], c[2] + dz * q.after];
+      if (!clear(a, b, kind, q.sc)) continue;
+      for (let i = 0; i < n; i++)
+        lanes.push({
+          tpl: kinds[i % kinds.length],
+          a: a.map(v => +v.toFixed(2)),
+          b: b.map(v => +v.toFixed(2)),
+          sp: q.sp,
+          gap: q.gap,
+          u0: +((i + 0.35 * R()) / n).toFixed(4),
+          sc: +(q.sc * R.range(0.9, 1.1)).toFixed(2),
+          bob: 0,
+          port: 30,
+          half: SHIP[kind].half * q.sc,
+          fogK: 0.4, // (seen through much less of the fog than it is in: what shows of it down there must be its lights, and those must carry)
+          below: 1 // (deep under everything: the towers are not cut down for it)
+        });
+      return true;
+    }
+    return false;
+  }
+  const fast = [
+    // down the east ravine toward the eye, and back up it lower down
+    stream(['racer', 'racer', 'racer-p'], 5, { x: [44, 52], y: [-146, -140], z: [-16, 16], head: 0, fan: 0.05, before: 100, after: 128, sp: 26, gap: 3, sc: 2.6 }),
+    stream(['racer-p', 'racer'], 4, { x: [60, 72], y: [-160, -154], z: [-16, 16], head: PI, fan: 0.05, before: 128, after: 100, sp: 22, gap: 4, sc: 2.8 }),
+    // across, under the city's floor: out from under one bank, over the city below, under the island, and on
+    stream(['racer', 'racer-p', 'racer', 'racer'], 4, { x: [-16, 0], y: [FLOOR - 8, FLOOR - 6], z: [-34, -18], head: PI / 2, fan: 0.12, before: 170, after: 160, sp: 30, gap: 3, sc: 2.8 })
+  ];
+  if (fast.indexOf(false) >= 0) console.log('  (a stream of fast ships found no clear lane: ' + fast.join(' ') + ')');
   return lanes;
 }
 module.exports = { planLanes };

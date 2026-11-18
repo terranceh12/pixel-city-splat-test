@@ -45,7 +45,7 @@ uniform mat4 u_model;
 uniform float u_mscale;
 uniform vec3 u_eye, u_cr, u_cu, u_cf;
 uniform vec2 u_focal, u_res, u_nf;
-uniform float u_t, u_dil, u_gfade, u_linFar, u_maxPt;
+uniform float u_t, u_dil, u_gfade, u_gfog, u_linFar, u_maxPt;
 uniform vec3 u_pal[48];
 uniform int u_nl;
 uniform vec4 u_lp[6];
@@ -219,10 +219,11 @@ void main() {
     add += (fl + u_warm * 0.55) * (up * 0.6);
     col += add * (0.32 + 1.3 * dot(col, vec3(0.30, 0.55, 0.15)));
   } else col *= bright;
-  float F = 1.0 - exp(-fogTau(u_eye, pw));
+  float F = 1.0 - exp(-fogTau(u_eye, pw) * u_gfog);   // (u_gfog: less fog for a ship that must show far down, the fast traffic)
   float far = smoothstep(u_fade.x, u_fade.y, length(pw.xz));
   float Hz = hazeAt(length(dv));
 #ifdef ADDITIVE
+  if ((flags & 2) != 0) F *= 0.42;   // (a glow that must carry through the deep fog: the fast ships far down)
   col *= (1.0 - F) * (1.0 - 0.8 * Hz) * (1.0 - far) * (1.0 - u_gfade);
   v_aux = vec3(0.0, 1.0, al);
 #else
