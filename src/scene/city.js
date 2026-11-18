@@ -143,6 +143,48 @@ module.exports = function buildCity(W) {
     }
   ];
   for (const L of lower) L.path = U.makePath(L.way, { step: 0.75, rad: L.rad });
+  // high in the distant city, three more, carried on tall legs and through the towers in their way
+  const high = [
+    {
+      name: 'H1',
+      hw: 1.9,
+      way: [
+        [230, 26, -110],
+        [120, 26, -170],
+        [10, 28, -250],
+        [-110, 32, -330],
+        [-330, 36, -380]
+      ],
+      rad: 60
+    },
+    {
+      name: 'H2',
+      hw: 2.2,
+      way: [
+        [-260, 44, -170],
+        [-150, 44, -250],
+        [-20, 46, -330],
+        [140, 48, -400],
+        [330, 50, -430]
+      ],
+      rad: 60
+    },
+    {
+      name: 'H3',
+      hw: 1.6,
+      way: [
+        [-260, 13, -40],
+        [-120, 14, -95],
+        [-20, 15, -125],
+        [44, 16, -140],
+        [110, 18, -190],
+        [190, 21, -300],
+        [230, 24, -460]
+      ],
+      rad: 60
+    }
+  ];
+  for (const H of high) H.path = U.makePath(H.way, { step: 1, rad: H.rad });
   /* ------------------------------------------------------------------ the lie of the land ------------------------------------------------------------------
      After the painting: the near highway runs along the top of a long wall, an island with the megatower at its bend. East of it
      (the painting's empty right half) and west of it the ground falls away into ravines; another opens to the north-west under the
@@ -173,8 +215,20 @@ module.exports = function buildCity(W) {
   };
   const HALO = { 22: 20, 23: 20, 24: 21, 25: 22, 26: 22, 29: 28, 30: 28, 31: 28, 34: 32, 35: 33, 36: 33, 39: 37, 40: 38, 41: 38, 44: 42, 45: 43, 46: 16, 47: 11 };
 
-  const roads = [{ path: main, hw: 2.0, under: 1.7 }].concat(lower.map(L => ({ path: L.path, hw: L.hw + 0.35, under: 0.3 }))),
+  const roads = [{ path: main, hw: 2.0, under: 1.7 }].concat(
+      lower.map(L => ({ path: L.path, hw: L.hw + 0.35, under: 0.3 })),
+      high.map(H => ({ path: H.path, hw: H.hw + 0.35, under: 0.4 }))
+    ),
     lowerRoads = roads.slice(1);
+  // a named tower that a road passes through is built round it, like the rest
+  const heroCut = o => {
+    const gaps = PT.roadGaps(o, roads).filter(g => g[1] < o.top - 3.5 && g[0] > (o.bottom === undefined ? W.FOG_CUT : o.bottom) + 3);
+    if (!gaps.length) return hero(o);
+    const cs = Math.abs(Math.cos(o.yaw || 0)),
+      sn = Math.abs(Math.sin(o.yaw || 0));
+    keep(o.x - (o.w * cs + o.d * sn) / 2 - 1.3, o.x + (o.w * cs + o.d * sn) / 2 + 1.3, o.z - (o.w * sn + o.d * cs) / 2 - 1.3, o.z + (o.w * sn + o.d * cs) / 2 + 1.3, o.top + 5);
+    return PT.towerCut(W, Object.assign({ what: 'hero' }, o), gaps, roads);
+  };
 
   // ---- the elevated highway ----
   PT.deck(W, main, { s0: S0, s1: main.len, wl: 1.5, wr: 2.0, y0: -0.55, y1: 0, mat: plain(RAMP.road), lo: 0.055 });
@@ -194,17 +248,20 @@ module.exports = function buildCity(W) {
     [-0.62, 0.028, 29, 20, 17, null, 1],
     [-0.86, 0.03, 39, -3, 27, null, 1]
   ];
+  // (every lane but the two violet edge lines carries traffic of every colour)
   LANES.forEach((l, i) =>
-    PT.trail(W, main, { s0: S0, s1: main.len - 30, off: l[0], sig: l[1], pal: l[2], sp: l[3], wl: l[4], ph: i * 0.37, glow: l[5], y: 0.04, minor: l[6] })
+    PT.trail(W, main, { s0: S0, s1: main.len - 30, off: l[0], sig: l[1], pal: l[2], sp: l[3], wl: l[4], ph: i * 0.37, glow: l[5], y: 0.04, minor: l[6], rainbow: l[2] !== 39 })
   );
   // lone bright cars now and then
-  PT.trail(W, main, { s0: S0, s1: main.len - 60, off: 0.12, sig: 0.05, pal: 26, sp: -34, wl: -150, ph: 0.2, y: 0.07 });
-  PT.trail(W, main, { s0: S0, s1: main.len - 60, off: -0.54, sig: 0.045, pal: 35, sp: 31, wl: -190, ph: 0.6, y: 0.07 });
+  PT.trail(W, main, { s0: S0, s1: main.len - 60, off: 0.12, sig: 0.05, pal: 26, sp: -34, wl: -150, ph: 0.2, y: 0.07, rainbow: true });
+  PT.trail(W, main, { s0: S0, s1: main.len - 60, off: -0.54, sig: 0.045, pal: 35, sp: 31, wl: -190, ph: 0.6, y: 0.07, rainbow: true });
   meta.paths.push(samplePath(main, S0 + 4, 430, 5));
+  // the light the cars throw on what they pass, in their colours
+  const CARC = [24, 30, 34, 35, 40, 27, 44, 8, 46, 25].map(i => PT.rgbOf(i));
   for (let i = 0; i < 6; i++)
-    meta.lights.push({ k: 'sweep', path: 0, sp: -21, off: i * 61 + 11, h: 0.9, r: 10, c: [1, 0.84, 0.46], i: 0.6 });
+    meta.lights.push({ k: 'sweep', path: 0, sp: -21, off: i * 61 + 11, h: 0.9, r: 10, c: CARC[(i * 3) % 10], i: 0.6 });
   for (let i = 0; i < 4; i++)
-    meta.lights.push({ k: 'sweep', path: 0, sp: 17, off: i * 92 + 40, h: 0.9, r: 8, c: [1, 0.3, 0.14], i: 0.42 });
+    meta.lights.push({ k: 'sweep', path: 0, sp: 17, off: i * 92 + 40, h: 0.9, r: 8, c: CARC[(i * 3 + 1) % 10], i: 0.42 });
 
   // ---- lower highways ----
   lower.forEach((L, li) => {
@@ -223,16 +280,34 @@ module.exports = function buildCity(W) {
         ph: i * 0.41 + li,
         y: 0.05,
         glow: i === 0 || i === 2 ? { pal: HALO[l[2]] || 20, a: 0.14, sig: 0.3 } : null,
-        minor: i % 2
+        minor: i % 2,
+        rainbow: true
       })
     );
     PT.trail(W, P, { s0: 0, s1: P.len, off: L.hw * 0.97, sig: 0.03, pal: L.edge, sp: 2, wl: 40, y: 0.04, minor: 1 });
     PT.trail(W, P, { s0: 0, s1: P.len, off: -L.hw * 0.97, sig: 0.03, pal: L.edge, sp: -2, wl: 36, y: 0.04, minor: 1 });
     meta.paths.push(samplePath(P, 0, P.len, 6));
-    const c = PT.rgbOf(L.lanes[0][2]);
     for (let i = 0; i < 3; i++)
-      meta.lights.push({ k: 'sweep', path: li + 1, sp: L.lanes[0][3] * 1.1, off: i * (P.len / 3) + 20 * li, h: 0.8, r: 9, c, i: 0.5 });
+      meta.lights.push({ k: 'sweep', path: li + 1, sp: L.lanes[0][3] * 1.1, off: i * (P.len / 3) + 20 * li, h: 0.8, r: 9, c: CARC[(li * 3 + i * 4) % 10], i: 0.5 });
   });
+  // ---- the high roads ----
+  high.forEach((H, hi) => {
+    const P = H.path;
+    PT.deck(W, P, { s0: 0, s1: P.len, wl: H.hw, wr: H.hw, y0: -0.6, y1: 0, mat: plain(RAMP.road), what: 'high', tile: 96, maxPiece: 14 });
+    PT.deck(W, P, { s0: 0, s1: P.len, wl: H.hw * 0.6, wr: H.hw * 0.6, y0: -1.6, y1: -0.6, mat: plain(RAMP.deck), top: false, what: 'high', tile: 96, maxPiece: 14 });
+    PT.piers(W, P, { s0: 20 + hi * 7, s1: P.len, gap: 44, w: 2.2, d: 2.2, y: -1.6, out: legs, tile: 96 });
+    [
+      [0.62, 0.09, 24, -16, 15],
+      [0.22, 0.08, 30, -12, 19],
+      [-0.22, 0.08, 34, 13, 17],
+      [-0.62, 0.09, 46, 17, 13]
+    ].forEach((l, i) =>
+      PT.trail(W, P, { s0: 0, s1: P.len, off: l[0] * H.hw, sig: l[1], pal: l[2], sp: l[3], wl: l[4], ph: i * 0.29 + hi * 0.7, y: 0.06, tile: 96, rainbow: true, glow: i === 1 ? { pal: 21, a: 0.12, sig: 0.6 } : null })
+    );
+    PT.trail(W, P, { s0: 0, s1: P.len, off: H.hw * 0.97, sig: 0.05, pal: 39, sp: 2, wl: 40, y: 0.05, tile: 96, minor: 1 });
+    PT.trail(W, P, { s0: 0, s1: P.len, off: -H.hw * 0.97, sig: 0.05, pal: 39, sp: -2, wl: 36, y: 0.05, tile: 96, minor: 1 });
+  });
+
   // ---- the megatower: stands at the outside of the bend; glass lifts ride its face ----
   const MG = { x: 5.3, z: -2.0, w: 6.0, d: 9.0, top: 36 };
   hero({ x: MG.x, z: MG.z, w: MG.w, d: MG.d, top: MG.top, style: 'dark', ramp: RAMP.mega, chunk: 16, lit: 0.8, roof: false, win: WIN.pale });
@@ -261,7 +336,9 @@ module.exports = function buildCity(W) {
   PT.riser(W, 6.92, zf, W.FOG_CUT, MG.top, { sig: 0.03, pal: 24, sp: -3, wl: 34, ph: 10.2, glow: { pal: 21, a: 0.12, sig: 0.3 }, n: FZ });
 
   // ---- the island: the wall under the near highway, its lower shoulder to the west with sunken landing courts ----
-  PT.cliff(W, { a: [2.6, 2.5], b: [2.6, 112], out: [1, 0], back: 3.2, top: -1.75, seed: 11, roads: lowerRoads, kept, near: true, step: 3, ports: 0.2, what: 'island' });
+  const ports = [], // aprons a ship may be parked on
+    parked = []; // ...and the ships parked: drawn by the page like the others, standing still
+  PT.cliff(W, { a: [2.6, 2.5], b: [2.6, 112], out: [1, 0], back: 3.2, top: -1.75, seed: 11, roads: lowerRoads, kept, near: true, step: 3, ports: 0.2, what: 'island', portsOut: ports });
   PT.cliff(W, { a: [-5, 112], b: [-5, -6.5], out: [-1, 0], back: 4.4, top: -1.75, bottom: -24, seed: 12, roads: lowerRoads, step: 1.2, ports: 0, bay: [9, 16], what: 'island' });
   PT.tower(W, { x: 0.85, z: -2, w: 2.9, d: 9, top: -1.75, noWin: true, ramp: RAMP.cliff, what: 'island' });
   const courtAt = (z, i) => i % 3 === 1 && z > 14 && z < 64,
@@ -278,25 +355,33 @@ module.exports = function buildCity(W) {
       step: 3.2,
       ports: 0.2,
       bay: [9, 14],
-      what: 'island'
+      what: 'island',
+      portsOut: ports
     });
+  let courts = 0;
   shoulder.forEach((b, k) => {
     if (!courtAt(b.z, b.i)) return;
     // a court sunk between its neighbours: a parapet on the open side, pad lights on its floor
     PT.tower(W, { x: -14.2, z: b.z, w: 0.6, d: b.w, top: b.top + 1.5, bottom: b.top - 1, noWin: true, ramp: RAMP.cliffS, roofEdge: 24, what: 'island' });
     landingPad(-9.6, b.top, b.z, Math.min(b.w, 9) * 0.34, k);
+    // something parked on most of them, nose to the open side
+    if (courts++ % 3 !== 2) {
+      const tug = courts % 2 === 0,
+        sc = tug ? 1.1 : 1.25;
+      parked.push({ tpl: tug ? 'tug-cold' : 'dart-cold', park: 1, x: -9.6 + (tug ? 0.4 : -0.6), y: +(b.top + (tug ? 0.55 : 0.2) * sc + 0.02).toFixed(2), z: +(b.z + (k % 2 ? 1.1 : -0.9)).toFixed(2), yaw: Math.PI / 2 + (k % 2 ? 0.35 : -0.5), sc });
+    }
   });
-  PT.cliff(W, { a: [-14.5, -6.5], b: [2.3, -6.5], out: [0, -1], back: 4, top: -8, seed: 14, roads: lowerRoads, kept, near: true, step: 2.4, ports: 0.25, bay: [5, 8], what: 'island' });
+  PT.cliff(W, { a: [-14.5, -6.5], b: [2.3, -6.5], out: [0, -1], back: 4, top: -8, seed: 14, roads: lowerRoads, kept, near: true, step: 2.4, ports: 0.25, bay: [5, 8], what: 'island', portsOut: ports });
   keep(-14.5, 2.6, -6.5, 112, -1);
 
   // ---- the banks of the ravines ----
   const bank = (a, b, out, seed, o) => PT.cliff(W, Object.assign({ a, b, out, back: 10, top: bankTop, seed, roads, kept, tile: 64, what: 'bank' }, o || {}));
-  bank([21, -125], [21, -4], [1, 0], 21, { near: true }); // the peninsula behind the megatower, its east face
-  bank([21, -4], [8.3, -4], [0, 1], 22, { near: true, back: 8, bay: [5, 8], ports: 0.3 }); // ... and the front of it, right of the megatower
-  bank([4.6, -6.5], [hwx(-125) + 7, -125], [-0.951, 0.309], 23, { near: true }); // ... and its west face, under the far highway
+  bank([21, -125], [21, -4], [1, 0], 21, { near: true, portsOut: ports }); // the peninsula behind the megatower, its east face
+  bank([21, -4], [8.3, -4], [0, 1], 22, { near: true, back: 8, bay: [5, 8], ports: 0.3, portsOut: ports }); // ... and the front of it, right of the megatower
+  bank([4.6, -6.5], [hwx(-125) + 7, -125], [-0.951, 0.309], 23, { near: true, portsOut: ports }); // ... and its west face, under the far highway
+  bank([-40, -6], [-40, 112], [1, 0], 26, { near: true, portsOut: ports }); // the west bank
   bank([80, 112], [80, -125], [-1, 0], 24); // the far bank to the east
   bank([80, -125], [21, -125], [0, 1], 25);
-  bank([-40, -6], [-40, 112], [1, 0], 26, { near: true }); // the west bank
   bank([-50, -6], [-40, -6], [0, -1], 27, { bay: [10, 12] });
   bank([hwx(-125) - 48, -125], [-50, -6], [0.951, -0.309], 28);
   bank([hwx(-125) + 7, -125], [hwx(-125) - 48, -125], [0, 1], 29);
@@ -306,12 +391,55 @@ module.exports = function buildCity(W) {
   PT.sign(W, { p: [10.7, 16.15, -4.9], n: [0, 0, 1], w: 2.4, h: 0.8, a: 24, b: 25, pat: 'bars', per: 5, lamp: { r: 12, i: 0.7 } });
   hero({ x: 15.5, z: -36, w: 9, d: 9, top: 23, bottom: -14, style: 'resid', ramp: RAMP.slateD, kit: 'mast', win: WIN.pale });
   PT.sign(W, { p: [15.5, 12.5, -31.45], n: [0, 0, 1], w: 1.4, h: 2.2, a: 34, b: 30, pat: 'blocks', per: 3.2, lamp: { r: 14, i: 0.8 } });
-  hero({ x: 44, z: -140, w: 13, d: 13, top: 56, style: 'glitter', win: WIN.pale, tile: 128 });
+  heroCut({ x: 44, z: -140, w: 13, d: 13, top: 56, style: 'glitter', win: WIN.pale, tile: 128 });
   PT.tower(W, { x: 44, z: -140, w: 8, d: 8, top: 68, bottom: 56, style: 'bands', win: WIN.gold, tile: 128, kit: 'mast' });
   hero({ x: -47, z: 12, w: 8, d: 9, top: 9.5, bottom: -16, style: 'columns', ramp: RAMP.slateD, kit: 'mast', lit: 1.2, roofEdge: 39 });
   PT.sign(W, { p: [-42.95, 1, 13], n: [1, 0, 0], w: 1.7, h: 1.7, a: 34, b: 47, c: 30, pat: 'split', per: 4.1, lamp: { r: 13, i: 0.9 } });
   hero({ x: -53, z: 34, w: 10, d: 10, top: 11.5, bottom: -16, style: 'resid', kit: 'std', win: WIN.warm });
   hero({ x: -64, z: -142, w: 12, d: 12, top: 34, style: 'glitter', win: WIN.gold, tile: 128 });
+
+  // ---- landmarks on the skyline: placed where the painting's distant city shows, clear of the roads (scratch search in the notes) ----
+  const parkFar = [];
+  [
+    ['gate', -110, -225, 26, 12, 72],
+    ['needle', -85, -360, 16, 16, 88],
+    ['terrace', -30, -225, 26, 22, 46],
+    ['twist', -45, -400, 18, 18, 96],
+    ['dock', 15, -285, 16, 16, 52],
+    ['crown', 20, -385, 18, 18, 100],
+    ['stack', 35, -190, 18, 18, 62],
+    ['twin', 80, -335, 26, 12, 82],
+    ['diagrid', -130, -165, 16, 16, 76],
+    ['twist', 105, -235, 16, 16, 72],
+    ['gate', 160, -320, 24, 12, 76],
+    ['needle', -240, -275, 14, 14, 72]
+  ].forEach(([type, x, z, w, d, top0], i) => {
+    // (no taller than will show under the top of a landscape window from the starting pose: about 11 degrees over the horizon)
+    const top = Math.round(Math.min(top0, 6 + 0.16 * Math.hypot(x, z))),
+      reach = PT.landmark(
+      W,
+      {
+        x,
+        z,
+        w: w * 1.35,
+        d: d * 1.35,
+        top,
+        bottom: -40,
+        yaw: i % 3 === 1 ? BEND : 0,
+        px: 1.8,
+        style: ['glitter', 'office', 'bands', 'resid'][i % 4],
+        ramp: [RAMP.slate, RAMP.cliffS, RAMP.plum, RAMP.pale][i % 4],
+        win: [WIN.warm, WIN.pale, WIN.gold, WIN.cool][i % 4],
+        lit: 1.2,
+        tile: 128,
+        seed: 7919 * (i + 3),
+        extra: 6
+      },
+      type,
+      { park: parkFar }
+    );
+    keep(x - reach - 2, x + reach + 2, z - reach - 2, z + reach + 2, top + 12);
+  });
 
   // ---- the pipelines: four mains floating across the north-west ravine from the island to the far city, as painted ----
   const pipeRuns = [];
@@ -360,24 +488,39 @@ module.exports = function buildCity(W) {
     }
   }
 
+  ports
+    .filter(q => q.seen < 1e8 && Math.hypot(q.x, q.z) < 120)
+    .sort((a, b) => a.seen - b.seen)
+    .forEach((q, i) => {
+      if (i % 2 || parked.length >= 10) return;
+      const tug = i % 4 === 2,
+        sc = tug ? 1.05 : 1.2,
+        f = (q.pa - q.depth) / 2,
+        u = (i % 3 - 1) * q.w * 0.15;
+      parked.push({ tpl: tug ? 'tug-cold' : 'dart-cold', park: 1, x: +(q.x + q.out[0] * f + q.t[0] * u).toFixed(2), y: +(q.y + (tug ? 0.55 : 0.2) * sc + 0.02).toFixed(2), z: +(q.z + q.out[1] * f + q.t[1] * u).toFixed(2), yaw: Math.atan2(-q.out[0], -q.out[1]) + (i % 3 - 1) * 0.25, sc });
+    });
+
   /* ------------------------------------------------------------------ the rest of the city ------------------------------------------------------------------ */
   const lanes = planLanes(W, { roads: roads.concat(pipeRuns), piers: legs, kept, ground: (x, z) => (inRavine(x, z, 0) ? -1e9 : 12), seed: 4242, debug: !!process.env.LANES });
-  meta.ships = lanes.concat(lifts);
+  meta.ships = lanes.concat(lifts, parked);
   const air = lanes.map(l => ({ path: U.makePath([l.a, l.b], { step: 1.5 }), hw: l.half * 2.2 + 2.4, drop: l.half + 2.4 }));
-  const stats = { towers: 0, cut: 0, floor: 0, signs: 0, street: 0 };
+  const stats = { towers: 0, cut: 0, landmarks: 0, floor: 0, signs: 0, street: 0 };
+  const LANDMARK = ['twist', 'stack', 'gate', 'terrace', 'needle', 'twin', 'dock', 'diagrid', 'crown', 'twist', 'terrace', 'twin', 'stack', 'needle'],
+    dockPark = [];
   const VIVID = [8, 27, 34, 35, 40, 44, 30, 24, 31, 45, 41, 8, 27, 35];
   const floorLights = [],
+    // (light thrown up by the streets: muted, so it tints the haze without turning it gold)
     FLC = [
-      [0.95, 0.66, 0.22],
-      [0.98, 0.82, 0.32],
-      [0.92, 0.44, 0.16],
-      [0.86, 0.3, 0.44],
-      [0.5, 0.36, 0.92],
-      [0.26, 0.58, 0.74],
-      [0.82, 0.76, 0.6],
-      [0.2, 0.85, 0.45],
-      [0.2, 0.4, 1.0],
-      [1.0, 0.3, 0.6]
+      [0.66, 0.52, 0.36],
+      [0.7, 0.62, 0.48],
+      [0.64, 0.46, 0.38],
+      [0.62, 0.42, 0.52],
+      [0.46, 0.42, 0.66],
+      [0.38, 0.52, 0.62],
+      [0.62, 0.6, 0.56],
+      [0.36, 0.6, 0.46],
+      [0.36, 0.44, 0.72],
+      [0.7, 0.4, 0.56]
     ];
   function cell(gx, gz, pitch, ring) {
     const j1 = h4(gx, gz, 1, ring),
@@ -421,7 +564,9 @@ module.exports = function buildCity(W) {
       top;
     if (ring === 0) {
       const back = clamp((-z + 10) / 120, 0, 1);
-      top = Math.min(9, -36 + 30 * n2 + 24 * n1 + back * 12) + (n3 > 0.92 ? 4 + 150 * (n3 - 0.92) : 0);
+      // (low near the eye, as painted; rising toward the far edge, where the high roads weave behind and between them)
+      const cap = 9 + (z < -60 ? 18 * clamp((r - 115) / 60, 0, 1) : 0);
+      top = Math.min(cap, -36 + 30 * n2 + 24 * n1 + back * (12 + (cap - 9))) + (n3 > 0.92 ? 4 + 150 * (n3 - 0.92) : 0);
     } else if (ring === 1) top = -10 + 30 * n1 * n1 + 22 * n2 + (n3 > 0.9 ? 16 + 420 * (n3 - 0.9) : 0);
     else top = -4 + 34 * n1 * n1 + 22 * n2 + (n3 > 0.93 ? 30 + 700 * (n3 - 0.93) : 0);
     const rad = Math.hypot(w, d) / 2;
@@ -492,20 +637,32 @@ module.exports = function buildCity(W) {
         what: 'ring' + ring
       };
     const cuts = gaps.filter(g => g[1] < top - 3.5 && g[0] > (bottom === undefined ? W.FOG_CUT : bottom) + 3);
+    // some of the distant ones are landmarks: built to do something, and shaped like it. They reach out past their plot, so they keep
+    // clear of the roads and the ships' lanes by more
+    let mark = null;
+    if (ring > 0 && !cuts.length && top > 14 && h4(gx, gz, 17, ring) < 0.14) {
+      const reachK = 1.75 * rad;
+      mark = LANDMARK[Math.floor(h4(gx, gz, 18, ring) * LANDMARK.length)];
+      for (const rd of roads) if (rd.path.dist(x, z) < reachK + rd.hw) mark = null;
+      for (const a of air) if (a.path.near(x, z)[0] < reachK + a.hw) mark = null;
+    }
     if (cuts.length) {
       PT.towerCut(W, o, cuts, roads);
       stats.cut++;
+    } else if (mark) {
+      PT.landmark(W, Object.assign({ seed: (gx * 73856093) ^ (gz * 19349663) ^ ring, lines: false }, o), mark, { park: dockPark });
+      stats.landmarks++;
     } else PT.tower(W, o);
     stats.towers++;
     if (ring < 2 && n5 > 0.3) street(x + pitch * 0.5, z + pitch * 0.5, n4, n3, 1 + (n5 > 0.8 ? 1 : 0));
     // a narrower top on some
-    if (top > -4 && n5 > 0.55) {
+    if (!mark && top > -4 && n5 > 0.55) {
       const up = (6 + 16 * n1) * (ring === 2 ? 1.6 : 1);
       PT.tower(W, Object.assign({}, o, { w: w * 0.58, d: d * 0.58, top: top + up, bottom: top, roofEdge: 0, kit: ring < 2 ? 'mast' : false, crown: 0 }));
       if (ring > 0 && n5 > 0.8) PT.beacon(W, x, top + up + 2.5, z, 34, { sp: 1.5 + 2 * n4, ph: n3 * 6, s: 0.3, hs: 2.5 });
     }
     // signs: some on show, more of them round the back where only their light is seen
-    if (ring < 2 && top > -30 && ev > 0.92 && !cuts.length) {
+    if (ring < 2 && top > -30 && ev > 0.92 && !cuts.length && !mark) {
       const hidden = ev > 0.955,
         a = [34, 39, 44, 30, 24, 35, 40][Math.floor(n3 * 7)],
         b = [47, 24, 35, 39, 44, 30, 46][Math.floor(n4 * 7)],
@@ -535,29 +692,22 @@ module.exports = function buildCity(W) {
     const n = Math.ceil(770 / pitch);
     for (let gx = -n; gx < n; gx++) for (let gz = -n; gz < Math.ceil(120 / pitch); gz++) cell(gx, gz, pitch, ring);
   });
+  dockPark
+    .concat(parkFar)
+    .filter(q => U.seenFrom(q.x, q.y, q.z, 2) < 1e8)
+    .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))
+    .slice(0, 5)
+    .forEach((q, i) => {
+      const sc = 1.6;
+      parked.push({ tpl: i % 2 ? 'tug-cold' : 'dart-cold', park: 1, x: +q.x.toFixed(2), y: +(q.y + (i % 2 ? 0.55 : 0.2) * sc + 0.02).toFixed(2), z: +q.z.toFixed(2), yaw: +q.yaw.toFixed(3), sc });
+    });
+  stats.parked = parked.length;
+  meta.ships = lanes.concat(lifts, parked);
 
   /* ------------------------------------------------------------------ light and air ------------------------------------------------------------------ */
-  // light from under the fog: another city far below. A warm well of it at the megatower's foot, more along the ravines
-  floorLights.push({ x: 6, z: 9, i: 0.2, r: 19, c: FLC[1], f: 0, s: 0.7, ph: 0, mx: 0, mz: 0 });
-  for (let i = 0; i < 46; i++) {
-    const x = R.range(-90, 82),
-      z = R.range(-128, 108);
-    if (!inRavine(x, z, -6)) continue;
-    floorLights.push({ x: +x.toFixed(1), z: +z.toFixed(1), i: +R.range(0.05, 0.13).toFixed(2), r: +R.range(18, 34).toFixed(1), c: FLC[i % 3], f: i % 3 === 2 ? 2 : 0, s: +R.range(0.2, 0.7).toFixed(2), ph: +R.range(0, 6).toFixed(2), mx: 0, mz: 0 });
-    const g = W.tile(x, z, 1, 128, 'deep');
-    W.glow(g, x, -150 - R.range(0, 20), z, R.range(16, 30), i % 4 ? 21 : 22, R.range(0.2, 0.36), { kind: K.FLICKER, sp: R.range(0.3, 0.8), ph: R.range(0, 6) });
-  }
-  // its lights, glimpsed through the fog
-  for (let x = -90; x < 82; x += 5)
-    for (let z = -126; z < 108; z += 5) {
-      const jx = x + R.range(0, 5),
-        jz = z + R.range(0, 5);
-      if (!inRavine(jx, jz, -3) || !R.chance(0.6)) continue;
-      const y = -182 - R.range(0, 14),
-        seen = U.seenFrom(jx, y, jz, 0);
-      if (seen > 1e8) continue;
-      W.lamp(W.tile(jx, jz, 0, 128, 'deep'), jx, y, jz, clamp((0.55 * seen) / U.F_ART, 0.2, 0.8), R.pick([24, 24, 25, 23, 30, 26, 31]), { kind: K.TWINKLE, sp: R.range(0.5, 2.5), ph: R.range(0, 6), big: true });
-    }
+  // the city under the fog, as it looks from far above
+  floorLights.push({ x: 6, z: 9, i: 0.08, r: 19, c: FLC[1], f: 0, s: 0.7, ph: 0, mx: 0, mz: 0 });
+  stats.deep = deepCity();
   for (let i = 0; i < 14; i++) {
     const L = lower[i % lower.length].path,
       a = L.at(R.range(0.1, 0.9) * L.len),
@@ -662,6 +812,38 @@ module.exports = function buildCity(W) {
       sa: s * R.range(1.4, 2.6)
     });
   }
+  // wisps of fog drifting just over the city down there, veiling it here and there
+  for (let i = 0; i < 160; i++) {
+    const x = R.range(-95, 85),
+      z = R.range(-130, 112),
+      y = R.range(-178, -142),
+      sz = R.range(8, 18);
+    if (!inRavine(x, z, -sz * 0.3)) continue;
+    W.glow(W.tile(x, z, 1, 96, 'fog'), x, y, z, sz, R.pick([16, 17, 17, 18]), R.range(0.05, 0.1), {
+      kind: K.PUFF,
+      ph: R.range(0, 6.28),
+      sp: R.range(0.02, 0.05),
+      rg: R.range(3, 8),
+      ax: W.B.norm([R.range(-1, 1), 0, R.range(-1, 1)]),
+      sa: sz * R.range(1.8, 3.2)
+    });
+  }
+  // the top of the fog in the ravines: long banks of it, lit from below, drifting
+  for (let i = 0; i < 150; i++) {
+    const x = R.range(-95, 85),
+      z = R.range(-130, 112),
+      y = R.range(-128, -96),
+      sz = R.range(7, 16);
+    if (!inRavine(x, z, -sz * 0.4)) continue;
+    W.glow(W.tile(x, z, 1, 96, 'fog'), x, y, z, sz, R.pick([16, 17, 17, 18]), R.range(0.045, 0.085), {
+      kind: K.PUFF,
+      ph: R.range(0, 6.28),
+      sp: R.range(0.025, 0.06),
+      rg: R.range(2, 6),
+      ax: W.B.norm([R.range(-1, 1), 0, R.range(-1, 1)]),
+      sa: sz * R.range(1.6, 2.8)
+    });
+  }
   // steam off a few roofs
   [
     [-9.6, -9, 47],
@@ -701,6 +883,81 @@ module.exports = function buildCity(W) {
       W.glow(gh, px, y + 6, pz, 5 + 3 * b, ca, 0.09, { ax: [0, 1, 0], sa: 9, kind: K.FLICKER, sp: 0.7 + b, ph: ph + 2 });
       stats.street++;
     }
+  }
+  /* the city at the bottom of the ravines, 180 units down, seen through the fog: districts of lit streets laid in grids that turn
+     from one district to the next, older ones lamp-gold, newer ones white, the odd dark park; every third street an avenue, brighter,
+     some with traffic moving on them; downtown blocks speckled with windows. Each district also lights the fog over it a little. */
+  function deepCity() {
+    const Y = -186,
+      D = 24,
+      FLD = [
+        [0.6, 0.5, 0.38],
+        [0.55, 0.55, 0.6]
+      ];
+    let n = 0;
+    for (let dx = -102; dx < 92; dx += D)
+      for (let dz = -136; dz < 120; dz += D) {
+        const cx = dx + D / 2,
+          cz = dz + D / 2;
+        if (!inRavine(cx, cz, D * 0.5)) continue;
+        const k = h4(dx, dz, 41, 7),
+          kind = k < 0.16 ? 'park' : k < 0.4 ? 'down' : k < 0.78 ? 'old' : 'new',
+          ang = (vn(cx, cz, 90, 43) - 0.5) * 1.3 + (h4(dx, dz, 45, 7) > 0.5 ? BEND : 0),
+          cs = Math.cos(ang),
+          sn = Math.sin(ang),
+          blk = kind === 'down' ? 4.2 + 1.6 * h4(dx, dz, 42, 7) : 5.6 + 3.4 * h4(dx, dz, 42, 7),
+          trafficK = h4(dx, dz, 46, 7),
+          put = (lx, lz) => [cx + lx * cs + lz * sn, cz - lx * sn + lz * cs],
+          inside = (x, z) => x >= dx && x < dx + D && z >= dz && z < dz + D && inRavine(x, z, -1.2);
+        for (const axis of [0, 1])
+          for (let v = -D * 0.75, li = 0; v <= D * 0.75; v += blk, li++) {
+            // a street: one colour of lamp along its length, the lamps so close that from up here they run together into a line
+            const avenue = li % 3 === 0,
+              rs = h4(dx * 3 + li, dz * 3 + axis, 52, 7),
+              dim = !avenue && h4(dx * 5 + li, dz * 5 + axis, 53, 7) < 0.4,
+              white = kind === 'new' || (kind === 'down' && rs < 0.6),
+              pal = avenue ? (rs < 0.5 ? 25 : 46) : white ? (dim ? 19 : rs < 0.75 ? 46 : 26) : dim ? (rs < 0.6 ? 22 : 29) : rs < 0.62 ? 30 : rs < 0.9 ? 23 : 31,
+              seg = avenue ? 1.5 : 2.1,
+              ax = axis ? [sn, 0, cs] : [cs, 0, -sn],
+              cars = avenue && h4(dx, dz, li, axis) < 0.55,
+              carSp = (h4(dx, li, 47, axis) < 0.5 ? -1 : 1) * (5 + 6 * trafficK);
+            if ((kind === 'park' && !avenue) || (!avenue && h4(dx * 7 + li, dz * 7 + axis, 54, 7) < 0.25)) continue; // (parks, yards, streets with the lamps off)
+            for (let u = -D * 0.75; u <= D * 0.75; u += seg) {
+              const p = axis ? put(v, u) : put(u, v),
+                x = p[0],
+                z = p[1];
+              if (!inside(x, z)) continue;
+              const r = h4(Math.round(x * 13), Math.round(z * 13), 44, axis);
+              if (r < 0.05) continue; // (a dark stretch)
+              const seen = U.seenFrom(x, Y, z, 0);
+              if (seen > 1e8) continue;
+              const sw = clamp((0.26 * seen) / U.F_ART, 0.1, 0.45) * (avenue ? 1.35 : 1),
+                y = Y + (rs - 0.5) * 1.2,
+                g = W.tile(x, z, 0, 96, 'deep');
+              W.lamp(g, x, y, z, sw, pal, { ax, sl: seg * 0.62, kind: K.STILL, nofog: true });
+              n++;
+              if (cars) {
+                // lone cars going by: white lights one way, red the other
+                W.lamp(g, x, y + 0.3, z, sw * 1.2, carSp > 0 ? 47 : 34, { ax, sl: seg * 0.4, kind: K.TRAIL, sp: carSp, rg: -(22 + 20 * trafficK), ex: u, ph: r, nofog: true });
+                n++;
+              }
+            }
+          }
+        if (kind === 'down')
+          // windows of the towers down there: a speckle inside the blocks
+          for (let i = 0; i < 45; i++) {
+            const lx = (h4(dx, dz, i, 48) - 0.5) * D,
+              lz = (h4(dx, dz, i, 49) - 0.5) * D,
+              p = put(lx, lz);
+            if (!inside(p[0], p[1])) continue;
+            const seen = U.seenFrom(p[0], Y, p[1], 0);
+            if (seen > 1e8) continue;
+            W.lamp(W.tile(p[0], p[1], 0, 96, 'deep'), p[0], Y + 2 + 6 * h4(i, dx, dz, 50), p[1], clamp((0.4 * seen) / U.F_ART, 0.15, 0.6), [46, 25, 46, 26, 24][i % 5], { kind: K.WINDOW, sp: i % 7 ? 0 : 1, ph: h4(i, dz, dx, 51), nofog: true });
+            n++;
+          }
+        floorLights.push({ x: +cx.toFixed(1), z: +cz.toFixed(1), i: kind === 'park' ? 0.01 : kind === 'down' ? 0.05 : 0.032, r: D * 0.7, c: FLD[kind === 'new' ? 1 : 0], f: 0, s: 0.15, ph: +(k * 6).toFixed(2), mx: 0, mz: 0 });
+      }
+    return n;
   }
   function samplePath(P, s0, s1, step) {
     const pts = [];

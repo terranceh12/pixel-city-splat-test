@@ -51,7 +51,7 @@ module.exports = function buildShips(W) {
     };
     solids(S);
     S.bake();
-    const T = { gS, gG, lights: [], R: U.rng(o.seed || 5), res: o.res };
+    const T = { gS, gG, lights: [], R: U.rng(o.seed || 5), res: o.res, haloK: o.haloK };
     extras(T);
     const n = W.take();
     W.meta.tpl[name] = { solid: gS, glow: gG, rad: o.rad, lights: T.lights };
@@ -114,7 +114,7 @@ module.exports = function buildShips(W) {
       });
     W.glow(gG, p[0], p[1], p[2] + len * 0.55, r * 0.9, o.halo, 0.42, { ax: AZ, sa: len * 0.5, kind: K.FLICKER, sp: 7, ph: R.range(0, 6) });
     W.glow(gG, p[0], p[1], p[2] + len * 1.1, r * 0.6, o.halo - 1 > 0 ? o.halo : o.halo, 0.2, { ax: AZ, sa: len * 0.7, kind: K.FLICKER, sp: 5, ph: R.range(0, 6) });
-    W.glow(gG, p[0], p[1], p[2] + r * 0.8, r * 3.4, o.halo, 0.6, { kind: K.FLICKER, sp: 17, ph: R.range(0, 6) });
+    W.glow(gG, p[0], p[1], p[2] + r * 0.8, r * 3.4 * (T.haloK || 1), o.halo, 0.6, { kind: K.FLICKER, sp: 17, ph: R.range(0, 6) });
     W.glow(gG, p[0], p[1], p[2] + r * 0.2, r * 1.5, o.mid, 0.7, { kind: K.FLICKER, sp: 29, ph: R.range(0, 6) });
     const sc = o.spark || [26, 25, 31, 47];
     for (let i = 0; i < (o.sparks === undefined ? 10 : o.sparks); i++)
@@ -224,9 +224,9 @@ module.exports = function buildShips(W) {
   );
 
   /* ---------------- wing: a broad dark manta with a lit screen along its body (the painting's upper left) ---------------- */
-  template(
-    'wing',
-    { res: 0.17, rad: 8, seed: 22 },
+  const wingShip = (name, res, haloK) => template(
+    name,
+    { res, rad: 8, seed: 22, haloK },
     S => {
       const hm = hullMat(W, { ramp: RAMP.hull, pitch: 0.34, p: 0.14, win: [22, 23, 24], seed: 31, rows: [0, -1] });
       S.ball([0, 0, 0], [1.5, 0.52, 3.7], hm);
@@ -256,26 +256,35 @@ module.exports = function buildShips(W) {
       T.lights.push({ p: [-3, 0, 0.3], r: 9, c: [0.45, 0.36, 0.85] });
     }
   );
+  wingShip('wing', 0.17);
+  wingShip('wing-near', 0.085, 0.55); // (the same, finer, for the ones that pass close to the eye)
 
-  /* ---------------- dart: the small craft ---------------- */
-  template(
-    'dart',
-    { res: 0.085, rad: 2.6, seed: 23 },
-    S => {
-      S.ball([0, 0, 0], [0.32, 0.2, 1.05], { r: RAMP.hull, b: 0.04 });
-      S.box([0, -0.03, 0.4], [0.86, 0.035, 0.3], DK);
-      S.box([0, 0.2, 0.75], [0.03, 0.2, 0.26], DK);
-    },
-    T => {
-      lamp(T, [0, 0.02, -1.06], 26, { s: 0.05, hp: 22, hk: 9, ha: 0.6 });
-      lamp(T, [0, 0.17, -0.35], 44, { s: 0.07, steady: true, n: [0, 1, -0.4], hp: 42, ha: 0.3 });
-      lamp(T, [-0.86, 0, 0.4], 34, { blink: true, s: 0.035 });
-      lamp(T, [0.86, 0, 0.4], 44, { blink: true, ph: 1.5, s: 0.035 });
-      const o = { core: 47, mid: 45, rim: 13, halo: 43, len: 1.5, sparks: 4, k: 12, fast: 1.3 };
-      engine(T, [-0.15, 0, 1.03], 0.1, o);
-      engine(T, [0.15, 0, 1.03], 0.1, o);
-    }
-  );
+  /* ---------------- dart: the small craft. cold: parked, engines off, the nozzles still warm ---------------- */
+  const dartShip = (name, res, cold, haloK) =>
+    template(
+      name,
+      { res, rad: 2.6, seed: 23, haloK },
+      S => {
+        S.ball([0, 0, 0], [0.32, 0.2, 1.05], { r: RAMP.hull, b: 0.04 });
+        S.box([0, -0.03, 0.4], [0.86, 0.035, 0.3], DK);
+        S.box([0, 0.2, 0.75], [0.03, 0.2, 0.26], DK);
+      },
+      T => {
+        lamp(T, [0, 0.02, -1.06], 26, cold ? { s: 0.04, halo: false, sp: 0.4 } : { s: 0.05, hp: 22, hk: 9, ha: 0.6 });
+        lamp(T, [0, 0.17, -0.35], 44, { s: 0.07, steady: true, n: [0, 1, -0.4], hp: 42, ha: cold ? 0.15 : 0.3 });
+        lamp(T, [-0.86, 0, 0.4], 34, { blink: true, s: 0.035 });
+        lamp(T, [0.86, 0, 0.4], 44, { blink: true, ph: 1.5, s: 0.035 });
+        if (cold) for (const x of [-0.15, 0.15]) lamp(T, [x, 0, 1.04], 28, { n: [0, 0, 1], s: 0.06, steady: true, halo: false });
+        else {
+          const o = { core: 47, mid: 45, rim: 13, halo: 43, len: 1.5, sparks: 4, k: 12, fast: 1.3 };
+          engine(T, [-0.15, 0, 1.03], 0.1, o);
+          engine(T, [0.15, 0, 1.03], 0.1, o);
+        }
+      }
+    );
+  dartShip('dart', 0.085);
+  dartShip('dart-near', 0.045, false, 0.6);
+  dartShip('dart-cold', 0.085, true);
 
   /* ---------------- barge: a flat bed of boxes behind a cab ---------------- */
   template(
@@ -310,9 +319,9 @@ module.exports = function buildShips(W) {
   );
 
   /* ---------------- liner: a long lit hull, its whole length of windows glowing ---------------- */
-  template(
-    'liner',
-    { res: 0.15, rad: 7, seed: 25 },
+  const linerShip = (name, res, haloK) => template(
+    name,
+    { res, rad: 7, seed: 25, haloK },
     S => {
       const hm = hullMat(W, { ramp: RAMP.hullS, pitch: 0.27, p: 0.62, win: [23, 24, 24, 25, 46], seed: 51, rows: [-1, 0, 1], clear: 7, b: 0.03 });
       S.lathe([0, 0, -4.1], 8.2, t => 0.12 + 0.86 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 0.9 + 0.06)), 0.55), hm, { ax: S.AZ });
@@ -334,16 +343,20 @@ module.exports = function buildShips(W) {
       engine(T, [0.3, -0.18, 4.08], 0.2, o);
     }
   );
+  linerShip('liner', 0.15);
+  linerShip('liner-near', 0.075, 0.55);
+
   /* ---------------- freighter: a spine hung with cargo boxes, a bridge over the bow, four engines on a beam astern ---------------- */
-  template(
-    'freighter',
-    { res: 0.17, rad: 10, seed: 26 },
+  const freighter = (name, aft, rot) => template(
+    name,
+    { res: 0.17, rad: 10, seed: 26 + rot },
     S => {
       const cab = hullMat(W, { ramp: RAMP.hull, pitch: 0.3, p: 0.55, win: [24, 25, 25, 46], seed: 61, rows: [2, 3], y0: 0.1 }),
-        ramps = [RAMP.warm, RAMP.slate, RAMP.plum, RAMP.hullS, RAMP.warmD, RAMP.hull, RAMP.slateD];
+        ramps0 = [RAMP.warm, RAMP.slate, RAMP.plum, RAMP.hullS, RAMP.warmD, RAMP.hull, RAMP.slateD],
+        ramps = ramps0.slice(rot).concat(ramps0.slice(0, rot));
       S.box([0, 0, 0.3], [0.42, 0.38, 5.7], DK2);
-      S.box([0, 1.0, -4.7], [0.95, 0.5, 0.85], cab);
-      S.box([0, 1.36, -5.1], [1.7, 0.1, 0.28], DK);
+      S.box([0, 1.0, aft ? 4.55 : -4.7], [0.95, 0.5, 0.85], cab);
+      S.box([0, 1.36, aft ? 4.95 : -5.1], [1.7, 0.1, 0.28], DK);
       for (let i = 0; i < 6; i++) {
         const z = -3.0 + i * 1.3;
         for (const sx of [-1, 1]) {
@@ -357,7 +370,8 @@ module.exports = function buildShips(W) {
       for (const sx of [-1.6, -0.6, 0.6, 1.6]) S.box([sx, 0.05, 6.1], [0.34, 0.36, 0.55], DK2);
     },
     T => {
-      const ids = [30, 44, 34, 24, 8, 40];
+      const ids0 = [30, 44, 34, 24, 8, 40],
+        ids = ids0.slice(rot % 6).concat(ids0.slice(0, rot % 6));
       for (let i = 0; i < 6; i++) {
         const z = -3.0 + i * 1.3;
         for (const sx of [-1, 1]) {
@@ -372,16 +386,19 @@ module.exports = function buildShips(W) {
         W.rod(T.gS, [-1.7, 2.0, z], [1.7, 2.0, z], 0.05, 4, { big: true });
         lamp(T, [0, 1.92, z], 26, { n: [0, -1, 0], s: 0.07, hp: 21, hk: 14, ha: 0.42, sp: 0.5, ph: z });
       }
-      lamp(T, [-1.72, 1.5, -5.1], 34, { blink: true });
-      lamp(T, [1.72, 1.5, -5.1], 8, { blink: true, ph: 1.5, hp: 42 });
-      lamp(T, [0, 1.75, -4.4], 47, { blink: true, sp: 3.4, ph: 0.7, s: 0.05 });
-      lamp(T, [0, 0.9, -5.58], 26, { s: 0.08, hp: 22, hk: 9, ha: 0.55 });
-      W.glow(T.gG, 0, 1.1, -4.9, 1.3, 21, 0.4, { kind: K.FLICKER, sp: 1.1, ph: 0 });
+      const bz = aft ? 4.95 : -5.1;
+      lamp(T, [-1.72, 1.5, bz], 34, { blink: true });
+      lamp(T, [1.72, 1.5, bz], 8, { blink: true, ph: 1.5, hp: 42 });
+      lamp(T, [0, 1.75, aft ? 4.3 : -4.4], 47, { blink: true, sp: 3.4, ph: 0.7, s: 0.05 });
+      lamp(T, aft ? [0, 0.2, -5.45] : [0, 0.9, -5.58], 26, { s: 0.08, hp: 22, hk: 9, ha: 0.55 });
+      W.glow(T.gG, 0, 1.1, aft ? 4.6 : -4.9, 1.3, 21, 0.4, { kind: K.FLICKER, sp: 1.1, ph: 0 });
       const o = { core: 47, mid: 31, rim: 30, halo: 28, len: 3.3, sparks: 6, k: 13, spark: [26, 25, 31, 36] };
       for (const sx of [-1.6, -0.6, 0.6, 1.6]) engine(T, [sx, 0.05, 6.67], 0.22, o);
       T.lights.push({ p: [0, 2.6, 0], r: 8, c: [0.6, 0.5, 0.3] });
     }
   );
+  freighter('freighter', false, 0);
+  freighter('freighter-b', true, 3);
 
   /* ---------------- tanker: four pressure spheres in a row on a keel, ringed with frames, a pod at the bow ---------------- */
   template(
@@ -413,25 +430,33 @@ module.exports = function buildShips(W) {
     }
   );
 
-  /* ---------------- tug: a blunt pusher, mostly engine, an amber beacon turning on its roof ---------------- */
-  template(
-    'tug',
-    { res: 0.1, rad: 3.4, seed: 28 },
-    S => {
-      S.box([0, 0, 0], [0.55, 0.42, 0.9], hullMat(W, { ramp: RAMP.warm, pitch: 0.22, p: 0.5, win: [24, 25, 46], seed: 71, rows: [0] }));
-      S.box([0, -0.05, -1.04], [0.78, 0.5, 0.1], DK2);
-      S.box([0, 0.58, -0.25], [0.34, 0.18, 0.4], { r: RAMP.slate, b: 0.06 });
-      S.box([0, 0, 1.0], [0.42, 0.36, 0.2], DK);
-    },
-    T => {
-      lamp(T, [0, 0.84, -0.25], 31, { blink: true, sp: 5, s: 0.06, hp: 28, hk: 7 });
-      lamp(T, [-0.3, 0.2, -1.16], 26, { s: 0.05, hp: 22, hk: 8, ha: 0.5 });
-      lamp(T, [0.3, 0.2, -1.16], 26, { s: 0.05, hp: 22, hk: 8, ha: 0.5 });
-      for (const x of [-0.18, 0.18]) lamp(T, [x, 0.6, -0.66], 44, { n: [0, 0.2, -1], s: 0.07, steady: true, hp: 42, ha: 0.3 });
-      engine(T, [0, 0, 1.22], 0.3, { core: 47, mid: 41, rim: 40, halo: 38, len: 2.4, sparks: 6, k: 14, spark: [26, 36, 41, 47] });
-      for (const sx of [-0.5, 0.5]) engine(T, [sx, -0.2, 1.0], 0.1, { core: 47, mid: 41, rim: 40, halo: 38, len: 1, sparks: 1, k: 7 });
-    }
-  );
+  /* ---------------- tug: a blunt pusher, mostly engine, an amber beacon turning on its roof. cold: parked ---------------- */
+  const tugShip = (name, cold) =>
+    template(
+      name,
+      { res: 0.1, rad: 3.4, seed: 28 },
+      S => {
+        S.box([0, 0, 0], [0.55, 0.42, 0.9], hullMat(W, { ramp: RAMP.warm, pitch: 0.22, p: cold ? 0.25 : 0.5, win: [24, 25, 46], seed: 71, rows: [0] }));
+        S.box([0, -0.05, -1.04], [0.78, 0.5, 0.1], DK2);
+        S.box([0, 0.58, -0.25], [0.34, 0.18, 0.4], { r: RAMP.slate, b: 0.06 });
+        S.box([0, 0, 1.0], [0.42, 0.36, 0.2], DK);
+      },
+      T => {
+        lamp(T, [0, 0.84, -0.25], 31, { blink: true, sp: cold ? 1.2 : 5, s: 0.06, hp: 28, hk: 7 });
+        if (!cold) {
+          lamp(T, [-0.3, 0.2, -1.16], 26, { s: 0.05, hp: 22, hk: 8, ha: 0.5 });
+          lamp(T, [0.3, 0.2, -1.16], 26, { s: 0.05, hp: 22, hk: 8, ha: 0.5 });
+        }
+        for (const x of [-0.18, 0.18]) lamp(T, [x, 0.6, -0.66], 44, { n: [0, 0.2, -1], s: 0.07, steady: true, hp: 42, ha: cold ? 0.12 : 0.3 });
+        if (cold) lamp(T, [0, 0, 1.22], 28, { n: [0, 0, 1], s: 0.12, steady: true, halo: false });
+        else {
+          engine(T, [0, 0, 1.22], 0.3, { core: 47, mid: 41, rim: 40, halo: 38, len: 2.4, sparks: 6, k: 14, spark: [26, 36, 41, 47] });
+          for (const sx of [-0.5, 0.5]) engine(T, [sx, -0.2, 1.0], 0.1, { core: 47, mid: 41, rim: 40, halo: 38, len: 1, sparks: 1, k: 7 });
+        }
+      }
+    );
+  tugShip('tug');
+  tugShip('tug-cold', true);
 
   /* ---------------- lift: a glass car for the megatower's face. Its glazed front looks out along +Z; the page carries it up and down ---------------- */
   template(

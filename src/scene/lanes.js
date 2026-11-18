@@ -54,6 +54,10 @@ function planLanes(W, o) {
     tanker: { half: 1.5, wide: 1.5, eye: 17, sc: [1, 1.3], sp: [0.5, 0.75] },
     tug: { half: 0.9, wide: 1.0, eye: 9, sc: [0.9, 1.2], sp: [0.5, 0.75] }
   };
+  SHIP['freighter-b'] = SHIP.freighter;
+  SHIP['wing-near'] = SHIP.wing;
+  SHIP['dart-near'] = SHIP.dart;
+  SHIP['liner-near'] = SHIP.liner;
   // is the run from a to b clear for a ship of this kind?
   function clear(a, b, kind, sc, why) {
     const k = SHIP[kind],
@@ -299,9 +303,93 @@ function planLanes(W, o) {
         { kind: 'tanker', off: [3, 0.6, 4], sc: 1 }
       ],
       { x: [30, 70], y: [-36, -31], z: [30, 70], head: PI / 2, fan: 1.6, len: 60 }
+    ),
+    pack(
+      [
+        { kind: 'freighter-b', off: [0, 0, 0], sc: 1.1 },
+        { kind: 'tanker', off: [-4.4, -1.2, 10], sc: 1.05 },
+        { kind: 'tug', off: [0, 1.6, -13], sc: 1 }
+      ],
+      { x: [34, 68], y: [-66, -60], z: [-110, -40], head: 0, fan: 0.15, len: 110 }
     )
   ];
   if (packs.indexOf(false) >= 0) console.log('  (a freighter pack found no clear lane: ' + packs.join(' ') + ')');
+  /* a few that pass close to the eye. A lane is laid across the view from the starting pose, `depth` in front of the eye and `lift`
+     above the line of sight (both in world units), turned `turn` from straight across, and run out each way for as long as it keeps
+     at least `least` from everywhere the eye can be and clear of everything built. tMid: when (seconds after the page opens) it is
+     first at its nearest. */
+  const CP = U.CP,
+    P0 = CP.pose(CP.C.az0, CP.C.el0);
+  function close(kind, q) {
+    const k = SHIP[kind],
+      sc = q.sc || 1;
+    const ok = (x, y, z, ux, uz) => {
+      if (U.eyePatchDist(x, y, z) < q.least) return false;
+      if (o.ground && y - k.half * sc < Math.min(2, o.ground(x, z))) return false;
+      const lo = y - k.half * sc,
+        hi = y + k.half * sc,
+        side = k.wide * sc + 0.7;
+      if (blocked(x, z, lo, hi) || blocked(x + ux * side, z + uz * side, lo, hi) || blocked(x - ux * side, z - uz * side, lo, hi)) return false;
+      return true;
+    };
+    let best = null;
+    for (let tries = 0; tries < 900; tries++) {
+      const depth = q.depth * (1 + R.range(-0.15, 0.25) * (tries > 0 ? 1 : 0)),
+        lift = q.lift + R.range(-2, 2) * (tries > 0 ? 1 : 0),
+        turn = q.turn + R.range(-0.2, 0.2) * (tries > 0 ? 1 : 0),
+        c = [0, 1, 2].map(i => P0.eye[i] + P0.fwd[i] * depth + P0.up[i] * lift),
+        d0 = [Math.cos(turn) * P0.right[0] + Math.sin(turn) * P0.fwd[0], 0, Math.cos(turn) * P0.right[2] + Math.sin(turn) * P0.fwd[2]],
+        dl = Math.hypot(d0[0], d0[2]),
+        d = [d0[0] / dl, (q.climb || 0), d0[2] / dl],
+        ux = d[2],
+        uz = -d[0];
+      if (!ok(c[0], c[1], c[2], ux, uz)) continue;
+      const run = [0, 0];
+      for (let s = 0; s < 2; s++) {
+        const sg = s ? 1 : -1;
+        let t = 0;
+        while (t < 140 && ok(c[0] + d[0] * sg * (t + 1.5), c[1] + d[1] * sg * (t + 1.5), c[2] + d[2] * sg * (t + 1.5), ux, uz)) t += 1.5;
+        run[s] = t;
+      }
+      if (run[0] < q.run || run[1] < q.run) continue;
+      best = { c, d, run };
+      break;
+    }
+    if (!best) return false;
+    const before = Math.min(best.run[0], 120) - 1,
+      after = Math.min(best.run[1], 120) - 1,
+      a = best.c.map((v, i) => v - best.d[i] * before),
+      b = best.c.map((v, i) => v + best.d[i] * after),
+      len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+      cycle = len / q.sp + q.gap,
+      u0 = ((((before / q.sp - q.tMid) / cycle) % 1) + 1) % 1;
+    lanes.push({
+      tpl: kind,
+      a: a.map(v => +v.toFixed(2)),
+      b: b.map(v => +v.toFixed(2)),
+      sp: q.sp,
+      gap: q.gap,
+      u0: +u0.toFixed(4),
+      sc,
+      bob: 0.12,
+      port: Math.min(18, before * 0.5),
+      half: k.half * sc,
+      close: 1
+    });
+    return true;
+  }
+  const near = [
+    // a wing gliding across in front of the eye, a little above the line of sight
+    close('wing-near', { depth: 19, lift: 2.5, turn: 0.18, least: 8, run: 26, sp: 0.85, gap: 34, tMid: 9, sc: 1 }),
+    // a pair of darts cutting across lower down, the other way
+    close('dart-near', { depth: 8.5, lift: -2.2, turn: Math.PI - 0.25, least: 4.5, run: 22, sp: 1.9, gap: 41, tMid: 24, sc: 1.1 }),
+    close('dart-near', { depth: 10.5, lift: -3.4, turn: Math.PI - 0.25, least: 4.5, run: 22, sp: 1.9, gap: 41, tMid: 25.3, sc: 1.1 }) ||
+      close('dart-near', { depth: 10.5, lift: -1.2, turn: Math.PI - 0.25, least: 4.5, run: 22, sp: 1.9, gap: 41, tMid: 25.3, sc: 1.1 }) ||
+      close('dart-near', { depth: 12, lift: 0.4, turn: Math.PI - 0.3, least: 4.5, run: 20, sp: 1.9, gap: 41, tMid: 25.3, sc: 1.1 }),
+    // a liner going away past the eye's right shoulder, climbing slowly
+    close('liner-near', { depth: 22, lift: 5, turn: 0.5, least: 9, run: 28, sp: 1.0, gap: 48, tMid: 44, sc: 1.2, climb: 0.03 })
+  ];
+  if (near.indexOf(false) >= 0) console.log('  (a close pass found no clear lane: ' + near.join(' ') + ')');
   // far traffic, small in the distance
   for (let i = 0; i < 6; i++) add(i % 2 ? 'liner' : 'barge', { x: [-200, 200], y: [16, 40], z: [-300, -130], head: i % 2 ? PI * 0.5 : -PI * 0.5, fan: 0.6 });
   return lanes;

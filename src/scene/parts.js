@@ -12,7 +12,7 @@ const deepPx = y => (y < -130 ? 3.6 : y < -100 ? 3 : y < -78 ? 2.4 : y < -58 ? 1
 /* A tower: a stack of box solids for the sculptor (walls and roof, laid coarse: they are dark), and its lit windows laid over
    them one splat to a window, so the glitter stays sharp however coarse the wall under it is.
    o: { x, z, w, d, top, bottom, yaw, style, ramp, win, lit, seed, tile, chunk, roofEdge, crown, tv, noWin, kit (roof clutter and a
-        beacon), px (walls), wpx (windows), occl } */
+        beacon), px (walls), wpx (windows), occl, under (its under side is open to the air: lay that face too) } */
 const WALL_PX = 4,
   WIN_PX = 2;
 function winProb(style, seed, face, iu, iv) {
@@ -70,6 +70,7 @@ function tower(W, o) {
         hi: o.hi || 5.5,
         segH: chunk + 1,
         top: first && o.roof !== false,
+        bottom: !!o.under && yb <= bottom + 0.01,
         grp,
         ycut: bottom,
         occl: o.occl,
@@ -269,7 +270,8 @@ function trail(W, path, o) {
       sp: o.sp,
       rg: o.wl,
       ex: s,
-      big
+      big,
+      rainbow: o.rainbow
     });
     if (o.glow && s >= gl) {
       const g = o.glow,
@@ -281,7 +283,8 @@ function trail(W, path, o) {
         ph: o.ph || 0,
         sp: o.sp,
         rg: Math.abs(o.wl),
-        ex: s
+        ex: s,
+        rainbow: o.rainbow
       });
       gl = s + gs * 2.2;
     }
@@ -377,7 +380,7 @@ function towerCut(W, o, gaps, roads) {
     first = true,
     res = 0;
   gaps.forEach((g, gi) => {
-    const r = tower(W, Object.assign({}, o, { top, bottom: g[1], kit: first ? o.kit : false, roofEdge: first ? o.roofEdge : 0, crown: first ? o.crown : 0 }));
+    const r = tower(W, Object.assign({}, o, { top, bottom: g[1], under: true, kit: first ? o.kit : false, roofEdge: first ? o.roofEdge : 0, crown: first ? o.crown : 0 }));
     if (first) res = r;
     first = false;
     // the hall: corner columns that stand clear of the road, lights under the floor above, a glow inside
@@ -422,7 +425,7 @@ function towerCut(W, o, gaps, roads) {
    Roads that meet the face pass through it in halls.
    o: { a: [x, z], b: [x, z], out: [nx, nz], back (how thick, behind the line), top (number or (x, z, i) => number), bottom, seed,
         bay: [min, max], step (the most a tier stands out), ports (chance), roads, kept (boxes for the lane planner), near (finer
-        fittings), tile, ramps, lit }  ->  the bays: [{ x, z, w, top, s0, s1 }] */
+        fittings), tile, ramps, lit, portsOut (an array: each port seen is added to it) }  ->  the bays: [{ x, z, w, top, s0, s1 }] */
 function cliff(W, o) {
   const K = W.KIND,
     R = U.rng(o.seed || 1),
@@ -491,7 +494,7 @@ function cliff(W, o) {
           // a road comes through: leave its hall open, with a line of lights over the opening
           let tt = yt;
           for (const g of gaps) {
-            if (tt - g[1] > 0.4) tower(W, Object.assign({}, box, { top: tt, bottom: Math.max(yb, g[1]) }));
+            if (tt - g[1] > 0.4) tower(W, Object.assign({}, box, { top: tt, bottom: Math.max(yb, g[1]), under: g[1] > yb }));
             if (g[1] <= yt && g[1] > yb) {
               const seen = U.seenFrom(mx + out[0] * pp, g[1], mz + out[1] * pp, 2);
               if (seen < 1e8) {
@@ -535,6 +538,7 @@ function cliff(W, o) {
           beacon(W, fx + t[0] * (w / 2 - 0.2), fy + 0.3, fz + t[1] * (w / 2 - 0.2), 34, { sp: 2.2, ph: i });
           beacon(W, fx - t[0] * (w / 2 - 0.2), fy + 0.3, fz - t[1] * (w / 2 - 0.2), 8, { sp: 2.2, ph: i + 1.6, hp: 42 });
           W.glow(gh, mx - out[0] * depth * 0.3, fy + ph * 0.5, mz - out[1] * depth * 0.3, Math.min(w, 9) * 0.42, col[1], 0.5, { kind: K.FLICKER, sp: 0.8, ph: i * 1.3 });
+          if (o.portsOut) o.portsOut.push({ x: mx, z: mz, y: fy, out, t, w, depth, pa, seen });
           if (o.near && Math.hypot(fx, fz) < 100) W.meta.lights.push({ k: 'pulse', p: [+fx.toFixed(1), +(fy + 1.5).toFixed(1), +fz.toFixed(1)], r: 10, c: rgbOf(col[0]), i: 0.45, sp: 0.6, ph: i });
         }
         pmax = Math.max(pmax, pa);
@@ -557,6 +561,289 @@ function cliff(W, o) {
     i++;
   }
   return bays;
+}
+
+/* ---------------------------------------------------------------- bands of light ----------------------------------------------------------------
+   A line of lamps round a box's four edges at height y, each facing out, as close together as the eye needs to see a line.
+   b: { x, z, w, d, yaw } (the box), o: { tile, kind, sp, down (face down: under a slab) } */
+function band(W, b, y, pal, o) {
+  o = o || {};
+  const cs = Math.cos(b.yaw || 0),
+    sn = Math.sin(b.yaw || 0),
+    Ux = [cs, 0, -sn],
+    Wz = [sn, 0, cs],
+    g = W.tile(b.x, b.z, 0, o.tile || 96, 'lit');
+  let made = 0;
+  for (const [ax, sg, hh, ot, oh] of [
+    [Ux, 1, b.w / 2, Wz, b.d / 2],
+    [Ux, -1, b.w / 2, Wz, b.d / 2],
+    [Wz, 1, b.d / 2, Ux, b.w / 2],
+    [Wz, -1, b.d / 2, Ux, b.w / 2]
+  ]) {
+    const n = [ax[0] * sg, 0, ax[2] * sg],
+      pc = [b.x + n[0] * hh, y, b.z + n[2] * hh];
+    if (!U.planeSeen(pc, n)) continue;
+    const seen = U.seenFrom(pc[0], y, pc[2], oh);
+    if (seen > 1e8) continue;
+    const sp = clamp((2.2 * seen) / U.F_ART, 0.3, 6),
+      s = clamp((0.42 * seen) / U.F_ART, 0.05, 0.9);
+    // (strokes laid end to end along the edge, so from far off it is one line)
+    for (let u = -oh + sp / 2; u < oh; u += sp) {
+      W.lamp(g, pc[0] + ot[0] * u + n[0] * 0.06, y, pc[2] + ot[2] * u + n[2] * 0.06, s, pal, {
+        ax: ot,
+        sl: sp * 0.6,
+        kind: o.kind === undefined ? W.KIND.TWINKLE : o.kind,
+        sp: o.sp || 0.7,
+        ph: u * 0.37 + y
+      });
+      made++;
+    }
+  }
+  return made;
+}
+
+// lines of light up the corners of a box that the eye can see, from y0 to y1
+function corners(W, b, y0, y1, pal, o) {
+  o = o || {};
+  const cs = Math.cos(b.yaw || 0),
+    sn = Math.sin(b.yaw || 0),
+    g = W.tile(b.x, b.z, 0, o.tile || 96, 'lit'),
+    up = [0, 1, 0];
+  for (const [lx, lz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const x = b.x + (lx * b.w * cs) / 2 + (lz * b.d * sn) / 2,
+      z = b.z - (lx * b.w * sn) / 2 + (lz * b.d * cs) / 2,
+      nx = lx * cs + lz * sn,
+      nz = -lx * sn + lz * cs;
+    if (!U.planeSeen([x, (y0 + y1) / 2, z], [nx, 0, nz])) continue;
+    const seen = U.seenFrom(x, (y0 + y1) / 2, z, (y1 - y0) / 2);
+    if (seen > 1e8) continue;
+    const sp = clamp((2.2 * seen) / U.F_ART, 0.3, 6),
+      s = clamp((0.42 * seen) / U.F_ART, 0.05, 0.9);
+    for (let y = y0 + sp / 2; y < y1; y += sp)
+      W.lamp(g, x + nx * 0.08, y, z + nz * 0.08, s, pal, { ax: up, sl: sp * 0.6, kind: W.KIND.TWINKLE, sp: 0.4, ph: y * 0.1 });
+  }
+}
+
+/* ---------------------------------------------------------------- the distant city's landmarks ----------------------------------------------------------------
+   Towers that are built to do something and look it, for the skyline: each a few boxes, laid finer than an ordinary far tower so the
+   shape carries, and outlined in light where it turns a corner.
+   o: a tower's options (x, z, w, d, top, bottom, yaw, ...); type: 'twist' | 'stack' | 'gate' | 'terrace' | 'needle' | 'twin' | 'dock' |
+   'diagrid' | 'crown'. out.park, if given, is handed places to park a ship (docking arms). Returns how far it reaches from (x, z). */
+const RAD = Math.PI / 180;
+function landmark(W, o, type, out) {
+  const R = U.rng((o.seed || 1) ^ 0x2c1b3c6d),
+    yaw = o.yaw || 0,
+    cs = Math.cos(yaw),
+    sn = Math.sin(yaw),
+    at = (lx, lz) => [o.x + lx * cs + lz * sn, o.z - lx * sn + lz * cs],
+    bottom = o.bottom === undefined ? W.FOG_CUT : o.bottom,
+    span = o.top - bottom,
+    base = Math.max(bottom, o.top - Math.min(span, 110)),
+    K = W.KIND,
+    edge = R.pick([24, 46, 44, 40, 35, 8, 30]),
+    fine = Object.assign({}, o, { px: o.px || 2.4, hi: 3.6, wpx: 1.8, kit: false, roofEdge: 0, crown: 0, what: 'landmark' }),
+    lines = o.lines !== false, // (the named ones are drawn in light at their corners as well)
+    cornerPal = R.pick([46, 24, 44, 40]),
+    part = q => tower(W, Object.assign({}, fine, q)),
+    podium = () => base > bottom + 1 && part({ top: base, roof: false });
+  let reach = Math.hypot(o.w, o.d) / 2;
+  switch (type) {
+    case 'twist': {
+      // slabs turned a few degrees each on the one below, a lit seam between
+      podium();
+      const n = clamp(Math.round((o.top - base) / 6.5), 5, 16),
+        side = Math.min(o.w, o.d) * 0.95,
+        dt = (R() < 0.5 ? -1 : 1) * R.range(4, 7.5) * RAD;
+      for (let i = 0; i < n; i++) {
+        const yb = base + ((o.top - base) * i) / n,
+          yt = base + ((o.top - base) * (i + 1)) / n - 0.3,
+          b = { x: o.x, z: o.z, w: side, d: side, yaw: yaw + dt * i };
+        part(Object.assign({}, b, { top: yt, bottom: yb, roof: i === n - 1, chunk: 40 }));
+        if (i % 2 === 1 || i === n - 1) band(W, b, yt + 0.05, edge, { tile: o.tile });
+        if (lines && i % 3 === 0) corners(W, b, yb, yt, cornerPal, { tile: o.tile });
+      }
+      reach = (side / 2) * Math.SQRT2;
+      break;
+    }
+    case 'stack': {
+      // long blocks laid crosswise on a slender core, each cantilevered out past the one below (as at The Interlace)
+      const core = Math.min(o.w, o.d) * 0.36,
+        nb = R.int(3, 5),
+        L = Math.max(o.w, o.d) * R.range(1.3, 1.6),
+        Wd = Math.min(o.w, o.d) * R.range(0.42, 0.52),
+        H = clamp((o.top - base) / (nb * 1.6), 4, 9);
+      part({ w: core, d: core, top: o.top - H * 0.5, style: 'columns' });
+      if (lines) corners(W, { x: o.x, z: o.z, w: core, d: core, yaw }, base, o.top - H * 0.5, cornerPal, { tile: o.tile });
+      for (let i = 0; i < nb; i++) {
+        const yt = o.top - i * H * 1.55,
+          yb = yt - H,
+          turn = (i % 2 ? 90 : 0) * RAD + R.range(-12, 12) * RAD,
+          off = (i % 2 ? -1 : 1) * L * R.range(0.12, 0.24),
+          c = at(Math.cos(turn) * off, -Math.sin(turn) * off),
+          b = { x: c[0], z: c[1], w: L, d: Wd, yaw: yaw + turn };
+        if (yb < base) break;
+        part(Object.assign({}, b, { top: yt, bottom: yb, under: true, style: R.pick(['glitter', 'office', 'resid']), lit: 1.4 }));
+        band(W, b, yt + 0.05, edge, { tile: o.tile });
+        band(W, b, yb - 0.05, 21, { tile: o.tile, down: true, kind: K.STILL });
+        reach = Math.max(reach, Math.abs(off) + L / 2);
+      }
+      break;
+    }
+    case 'gate': {
+      // two legs and a bridge across their tops: the sky shows through
+      const legW = o.w * 0.3,
+        bh = clamp((o.top - base) * 0.16, 4, 14),
+        over = o.w * R.range(0, 0.22);
+      for (const sx of [-1, 1]) {
+        const c = at(sx * (o.w / 2 - legW / 2), 0);
+        part({ x: c[0], z: c[1], w: legW, d: o.d, top: o.top - bh, roof: false });
+        if (lines) corners(W, { x: c[0], z: c[1], w: legW, d: o.d, yaw }, base, o.top - bh, cornerPal, { tile: o.tile });
+      }
+      const c = at(over / 2, 0),
+        b = { x: c[0], z: c[1], w: o.w + over, d: o.d, yaw };
+      part(Object.assign({}, b, { top: o.top, bottom: o.top - bh, under: true, style: 'glitter', lit: 1.6 }));
+      band(W, b, o.top - bh - 0.05, R.pick([24, 44, 46]), { tile: o.tile, down: true, kind: K.STILL });
+      band(W, b, o.top + 0.05, edge, { tile: o.tile });
+      W.glow(W.tile(o.x, o.z, 1, 192, 'halo'), o.x, o.top - bh - 3, o.z, o.w * 0.3, 38, 0.25, { kind: K.FLICKER, sp: 0.7, ph: R() * 6 });
+      reach = (o.w + over) / 2 + over / 2;
+      break;
+    }
+    case 'terrace': {
+      // a stepped mountain of terraces, gardens lit along every ledge
+      const n = R.int(4, 7),
+        lean = R.pick([[1, 0], [-1, 0], [0, 1], [0, -1]]),
+        y0 = Math.max(bottom, o.top - Math.min(span, 26 + n * 8)),
+        ht = (o.top - y0) / n;
+      if (y0 > bottom + 1) part({ top: y0, roof: false });
+      for (let i = 0; i < n; i++) {
+        const k = 1 - i * 0.13,
+          wi = o.w * (lean[0] ? k : 1 - i * 0.05),
+          di = o.d * (lean[1] ? k : 1 - i * 0.05),
+          c = at((lean[0] * (o.w - wi)) / 2, (lean[1] * (o.d - di)) / 2),
+          yt = y0 + (i + 1) * ht,
+          b = { x: c[0], z: c[1], w: wi, d: di, yaw };
+        part(Object.assign({}, b, { top: yt, bottom: y0 + i * ht, roof: true }));
+        band(W, b, yt + 0.06, i % 2 ? 8 : 24, { tile: o.tile, sp: 0.4 });
+      }
+      break;
+    }
+    case 'needle': {
+      // a mast of a tower with a pod near the top (a lookout, a relay), a ring of light round the pod
+      const T = o.top + (o.extra || R.range(10, 30)),
+        sh = Math.min(o.w, o.d) * 0.34,
+        yp = base + (T - base) * 0.8,
+        pw = Math.min(o.w, o.d) * 0.95;
+      part({ w: sh, d: sh, top: T, style: 'columns', roof: true });
+      if (lines) corners(W, { x: o.x, z: o.z, w: sh, d: sh, yaw }, base, T, cornerPal, { tile: o.tile });
+      for (const tw of [0, 45 * RAD]) {
+        const b = { x: o.x, z: o.z, w: pw, d: pw, yaw: yaw + tw };
+        part(Object.assign({}, b, { top: yp + 1.8, bottom: yp - 1.8, under: true, style: 'glitter', lit: 2.2, chunk: 40 }));
+        band(W, b, yp + 1.85, R.pick([44, 35, 40]), { tile: o.tile, sp: 1.6 });
+        band(W, b, yp - 1.85, 46, { tile: o.tile, down: true, kind: K.STILL });
+      }
+      W.rod(W.tile(o.x, o.z, 0, o.tile || 96), [o.x, T, o.z], [o.x, T + 9, o.z], 0.25, 4, { big: true });
+      beacon(W, o.x, T + 9.2, o.z, 34, { sp: 2, ph: R() * 6, s: 0.3, hs: 2.4 });
+      reach = (pw / 2) * Math.SQRT2;
+      break;
+    }
+    case 'twin': {
+      // two towers of different height tied by sky bridges
+      const tw = o.w * 0.38,
+        h2 = o.top - R.range(0.12, 0.3) * (o.top - base),
+        ca = at(-o.w * 0.31, 0),
+        cb = at(o.w * 0.31, 0);
+      part({ x: ca[0], z: ca[1], w: tw, d: o.d });
+      part({ x: cb[0], z: cb[1], w: tw, d: o.d * 0.86, top: h2 });
+      if (lines) {
+        corners(W, { x: ca[0], z: ca[1], w: tw, d: o.d, yaw }, base, o.top, cornerPal, { tile: o.tile });
+        corners(W, { x: cb[0], z: cb[1], w: tw, d: o.d * 0.86, yaw }, base, h2, cornerPal, { tile: o.tile });
+      }
+      const nb = R.int(2, 3);
+      for (let i = 0; i < nb; i++) {
+        const yb = base + (h2 - base) * (0.42 + i * 0.22),
+          b = { x: o.x, z: o.z, w: o.w * 0.3, d: o.d * 0.4, yaw };
+        part(Object.assign({}, b, { top: yb + 2.4, bottom: yb, under: true, style: 'glitter', lit: 2.4 }));
+        band(W, b, yb + 2.45, edge, { tile: o.tile });
+      }
+      band(W, { x: ca[0], z: ca[1], w: tw, d: o.d, yaw }, o.top + 0.05, edge, { tile: o.tile });
+      break;
+    }
+    case 'dock': {
+      // a tower with landing arms reaching out at two or three heights, lights to bring a ship in along each
+      part({});
+      const faces = [[1, 0], [-1, 0], [0, 1], [0, -1]],
+        na = R.int(2, 3);
+      for (let i = 0; i < na; i++) {
+        const f = faces[(i + R.int(0, 3)) % 4],
+          along = f[0] ? o.w : o.d,
+          L = along * R.range(0.6, 0.85),
+          wa = (f[0] ? o.d : o.w) * 0.55,
+          y = base + (o.top - base) * (0.45 + i * 0.18),
+          lx = f[0] * (along / 2 + L / 2 - 0.5),
+          lz = f[1] * (along / 2 + L / 2 - 0.5),
+          c = at(lx, lz),
+          b = { x: c[0], z: c[1], w: f[0] ? L : wa, d: f[0] ? wa : L, yaw };
+        tower(W, Object.assign({}, b, { top: y, bottom: y - 0.9, under: true, noWin: true, ramp: M.RAMP.deck, roof: true, tile: o.tile, px: 2.4, hi: 3.6, what: 'landmark' }));
+        band(W, b, y + 0.06, R.pick([24, 44, 30]), { tile: o.tile, kind: K.BLINK, sp: 2.4 });
+        const tip = at(f[0] * (along / 2 + L - 0.6), f[1] * (along / 2 + L - 0.6));
+        beacon(W, tip[0], y + 0.4, tip[1], 34, { sp: 2.4, ph: i, s: 0.2 });
+        const nx = f[0] * cs + f[1] * sn,
+          nz = -f[0] * sn + f[1] * cs; // (the way the arm reaches, in the world: a ship parked on it points out along it)
+        if (out && out.park) out.park.push({ x: c[0], y, z: c[1], yaw: Math.atan2(-nx, -nz), along: L, wide: wa });
+        reach = Math.max(reach, along / 2 + L);
+      }
+      break;
+    }
+    case 'diagrid': {
+      // a plain shaft wrapped in a lattice of light
+      part({ style: 'sparse' });
+      const pal = R.pick([40, 44, 35, 24, 41]),
+        g = W.tile(o.x, o.z, 0, o.tile || 96, 'lit'),
+        y0 = Math.max(bottom, o.top - 90),
+        Ux = [cs, 0, -sn],
+        Wz = [sn, 0, cs];
+      for (const [ax, sg, hh, ot, oh] of [
+        [Ux, 1, o.w / 2, Wz, o.d / 2],
+        [Ux, -1, o.w / 2, Wz, o.d / 2],
+        [Wz, 1, o.d / 2, Ux, o.w / 2],
+        [Wz, -1, o.d / 2, Ux, o.w / 2]
+      ]) {
+        const n = [ax[0] * sg, 0, ax[2] * sg],
+          pc = [o.x + n[0] * hh, (o.top + y0) / 2, o.z + n[2] * hh];
+        if (!U.planeSeen(pc, n)) continue;
+        const seen = U.seenFrom(pc[0], pc[1], pc[2], oh);
+        if (seen > 1e8) continue;
+        const sp = clamp((1.4 * seen) / U.F_ART, 0.3, 4),
+          s = clamp((0.45 * seen) / U.F_ART, 0.05, 0.9),
+          cell = 2 * oh;
+        for (let y = y0; y < o.top; y += sp) {
+          const f = ((y - y0) / cell) % 2, // zig and zag across the face
+            u1 = -oh + (f < 1 ? f : 2 - f) * 2 * oh,
+            u2 = -u1;
+          for (const u of [u1, u2])
+            W.lamp(g, pc[0] + ot[0] * u + n[0] * 0.07, y, pc[2] + ot[2] * u + n[2] * 0.07, s, pal, { n, sn: s * 0.5, kind: K.TWINKLE, sp: 0.5, ph: y * 0.05 });
+        }
+      }
+      band(W, o, o.top + 0.05, pal, { tile: o.tile });
+      break;
+    }
+    default: {
+      // 'crown': three set-back tiers on top, each outlined, and a spire
+      const ch = clamp((o.top - base) * 0.22, 6, 18);
+      part({ top: o.top - ch, roof: true });
+      if (lines) corners(W, o, base, o.top - ch, cornerPal, { tile: o.tile });
+      for (let i = 0; i < 3; i++) {
+        const k = 0.8 - i * 0.18,
+          b = { x: o.x, z: o.z, w: o.w * k, d: o.d * k, yaw },
+          yt = o.top - ch + (ch * (i + 1)) / 3;
+        part(Object.assign({}, b, { top: yt, bottom: o.top - ch + (ch * i) / 3, style: 'bands', lit: 1.5 }));
+        band(W, b, yt + 0.05, i === 2 ? 46 : edge, { tile: o.tile });
+      }
+      W.rod(W.tile(o.x, o.z, 0, o.tile || 96), [o.x, o.top, o.z], [o.x, o.top + ch, o.z], 0.2, 4, { big: true });
+      beacon(W, o.x, o.top + ch + 0.2, o.z, 34, { sp: 1.6, ph: R() * 6, s: 0.25, hs: 2 });
+    }
+  }
+  return reach;
 }
 
 const rgbOf = i => PAL.rgb[i];
@@ -624,4 +911,4 @@ function sign(W, o) {
     });
   }
 }
-module.exports = { tower, towerCut, roadGaps, cliff, roofKit, beacon, deck, piers, trail, riser, sign, deepPx, rgbOf };
+module.exports = { tower, towerCut, roadGaps, cliff, landmark, band, corners, roofKit, beacon, deck, piers, trail, riser, sign, deepPx, rgbOf };

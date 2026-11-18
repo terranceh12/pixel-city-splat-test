@@ -270,7 +270,7 @@ function makeWorld(kit, opt) {
     REC.tag({
       group: g,
       kind: o.kind || 0,
-      flags: F.EM | F.ADD | (o.big ? F.BIG : 0),
+      flags: F.EM | F.ADD | (o.big ? F.BIG : 0) | (o.rainbow ? F.RAINBOW : 0),
       ph: o.ph,
       sp: o.sp,
       rg: o.rg,
@@ -282,7 +282,7 @@ function makeWorld(kit, opt) {
   // a solid light: a small bright dab that hides what is behind it. o: { n (the way it faces), kind, ph, sp, rg, ex, big, sn }
   W.lamp = (g, x, y, z, s, pal, o) => {
     o = o || {};
-    REC.tag({ group: g, kind: o.kind || 0, flags: F.EM | (o.big ? F.BIG : 0), ph: o.ph, sp: o.sp, rg: o.rg, ex: o.ex });
+    REC.tag({ group: g, kind: o.kind || 0, flags: F.EM | (o.big ? F.BIG : 0) | (o.nofog ? F.NOFOG : 0) | (o.rainbow ? F.RAINBOW : 0), ph: o.ph, sp: o.sp, rg: o.rg, ex: o.ex });
     if (o.n) B.disc(x, y, z, o.n, s, o.sn || s * 0.5, P[pal], 3, EM);
     else if (o.ax) B.stick(x, y, z, o.ax, o.sl || s, s, P[pal], 3, EM);
     else B.iso(x, y, z, s, P[pal], 3, EM);

@@ -303,13 +303,14 @@
   /* a ship's place: nose down its own -Z, carried along a straight lane from a to b. It fades out of the haze at one end and back
      into it at the other, waits, and comes again. */
   const ships = (META.ships || []).map((s, i) => {
-    if (s.lift) {
-      // a lift car: no lane, only a shaft. It keeps the way it faces and rides up and down, waiting a while at each end
+    if (s.lift || s.park) {
+      // a lift car (no lane, only a shaft: it keeps the way it faces and rides up and down), or a ship parked
       const cy = Math.cos(s.yaw || 0),
         sy = Math.sin(s.yaw || 0),
         sc = s.sc || 1,
-        M = new Float32Array([cy * sc, 0, -sy * sc, 0, 0, sc, 0, 0, sy * sc, 0, cy * sc, 0, s.x, s.y0, s.z, 1]);
-      return { s, len: 1, f: [-sy, 0, -cy], r: [cy, 0, -sy], u: [0, 1, 0], M, sc, tpl: META.tpl[s.tpl], cycle: s.per, fade: 0, on: true, pos: [s.x, s.y0, s.z], i };
+        y = s.park ? s.y : s.y0,
+        M = new Float32Array([cy * sc, 0, -sy * sc, 0, 0, sc, 0, 0, sy * sc, 0, cy * sc, 0, s.x, y, s.z, 1]);
+      return { s, len: 1, f: [-sy, 0, -cy], r: [cy, 0, -sy], u: [0, 1, 0], M, sc, tpl: META.tpl[s.tpl], cycle: s.per || 1, fade: 0, on: true, pos: [s.x, y, s.z], i };
     }
     const d = [s.b[0] - s.a[0], s.b[1] - s.a[1], s.b[2] - s.a[2]],
       len = Math.hypot(d[0], d[1], d[2]),
@@ -338,11 +339,28 @@
   function placeShips(t) {
     for (const h of ships) {
       const s = h.s;
+      if (s.park) continue;
       if (s.lift) {
+        // up and down the shaft, stopping a while at two floors on the way and at each end
         const u = (((t / s.per + s.ph) % 1) + 1) % 1,
-          tri = u < 0.5 ? u * 2 : 2 - u * 2,
-          e = clamp((tri - 0.07) / 0.86, 0, 1),
-          y = s.y0 + (s.y1 - s.y0) * e * e * (3 - 2 * e);
+          HF = 0.08,
+          LF = (1 - 4 * HF) / 3;
+        let x = u < 0.5 ? u * 2 : 2 - u * 2,
+          e = 1;
+        for (let k = 0; k < 3; k++) {
+          x -= HF;
+          if (x <= 0) {
+            e = k / 3;
+            break;
+          }
+          if (x < LF) {
+            const f = x / LF;
+            e = (k + f * f * (3 - 2 * f)) / 3;
+            break;
+          }
+          x -= LF;
+        }
+        const y = s.y0 + (s.y1 - s.y0) * e;
         h.pos[1] = h.M[13] = y;
         continue;
       }
@@ -459,6 +477,7 @@
   if (qs.has('art')) FORCE.art = +qs.get('art');
   if (qs.has('mx') || qs.has('my')) EYE.held = [+(qs.get('mx') || 0), +(qs.get('my') || 0)];
   if (qs.has('t')) EYE.time = +qs.get('t');
+  const DEBUG_CAM = qs.has('cam') ? qs.get('cam').split(',').map(Number) : null;
   const DEBUG = qs.has('debug') ? document.getElementById('stats') : null,
     PROF = qs.has('prof'),
     SKIP = (qs.get('skip') || '').split(','),
@@ -526,6 +545,7 @@
     gl.uniform3fv(u.u_cu, cam.up);
     gl.uniform3fv(u.u_cf, cam.fwd);
     gl.uniform4f(u.u_fog, LOOK.fogY, 1 / LOOK.fogH, LOOK.fogRho, 1 / LOOK.upH);
+    gl.uniform1f(u.u_fogC, LOOK.fogC === undefined ? 8 : LOOK.fogC);
     gl.uniform4f(u.u_fade, LOOK.far0, LOOK.far1, LOOK.pool0, LOOK.pool1);
     gl.uniform1f(u.u_fogU, LOOK.fogU || 0);
     gl.uniform4fv(u.u_haze, LOOK.haze);
@@ -616,6 +636,17 @@
     }
     const ae = CP.hover(EYE.x, EYE.y);
     cam = CP.pose(ae[0], ae[1]);
+    if (DEBUG_CAM) {
+      // (for looking at things up close while building: ?cam=eyeX,eyeY,eyeZ,atX,atY,atZ. What no hover pose can see is not there)
+      const e = DEBUG_CAM.slice(0, 3),
+        f0 = [DEBUG_CAM[3] - e[0], DEBUG_CAM[4] - e[1], DEBUG_CAM[5] - e[2]],
+        fl = Math.hypot(f0[0], f0[1], f0[2]),
+        f = f0.map(v => v / fl),
+        rl = Math.hypot(f[2], f[0]),
+        r = [-f[2] / rl, 0, f[0] / rl],
+        u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+      cam = { eye: e, right: r, up: u, fwd: f };
+    }
     lens = CP.lens(T.aw / T.ah);
     lens.tanH0 = lens.tanH; // (the picture proper; with its border of spare pixels it takes in a little more)
     lens.tanV0 = lens.tanV;

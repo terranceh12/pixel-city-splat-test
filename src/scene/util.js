@@ -209,4 +209,15 @@ function makePath(way, o) {
   return { pts, cum, len, at, dist, near };
 }
 
-module.exports = { CP, rng, h4, clamp, EYES, EYE_MAX_Y, EYE_MIN_Y, nearestEye, seenFrom, resAt, resBox, setPx, getPx, planeSeen, makePath, F_ART };
+/* how near a place comes to anywhere the eye can be: the eye keeps to a patch of a sphere about the bend (the hover range), so this is
+   the distance to the nearest point of that patch */
+function eyePatchDist(x, y, z) {
+  const C = CP.C,
+    r = Math.hypot(x, y, z) || 1e-6,
+    az = clamp(Math.atan2(x, z), C.az0 - C.azRange, C.az0 + C.azRange),
+    el = clamp(Math.asin(clamp(y / r, -1, 1)), C.el0 - C.elDown, C.el0 + C.elUp),
+    ce = Math.cos(el);
+  return Math.hypot(x - C.R * ce * Math.sin(az), y - C.R * Math.sin(el), z - C.R * ce * Math.cos(az));
+}
+
+module.exports = { CP, rng, h4, clamp, eyePatchDist, EYES, EYE_MAX_Y, EYE_MIN_Y, nearestEye, seenFrom, resAt, resBox, setPx, getPx, planeSeen, makePath, F_ART };

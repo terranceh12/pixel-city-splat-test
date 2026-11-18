@@ -2,6 +2,7 @@
 const NeonShaders = (() => {
   const FOG = `
 uniform vec4 u_fog;        // y0, 1 / scale height, density at y0, 1 / uplight height
+uniform float u_fogC;      // below y0 - u_fogC scale heights the fog grows no denser (so the lights of the city far below show through)
 uniform vec4 u_fade;       // far fade start, far fade end, fog pool start, fog pool end (radii about the bend)
 uniform float u_fogU;      // a thin even haze everywhere, by distance
 uniform vec3 u_fogLo;
@@ -10,21 +11,22 @@ uniform vec4 u_haze;       // the colour far things take on (the air between, bl
 uniform vec3 u_warm;       // the light of whatever lies under the fog
 uniform sampler2D u_floor; // the light that comes up from the streets far below
 uniform vec4 u_floorRect;  // x0, z0, 1 / width, 1 / depth
+// the fog's density (as a multiple of its density at y0), and that summed from far above down to y
+float fogDens(float y) { return exp(-max((y - u_fog.x) * u_fog.y, -u_fogC)); }
+float fogF(float y) {
+  float a = (y - u_fog.x) * u_fog.y;
+  return a > -u_fogC ? -exp(-a) / u_fog.y : exp(u_fogC) * (y - u_fog.x + u_fogC / u_fog.y - 1.0 / u_fog.y);
+}
 float fogTau(vec3 eye, vec3 p) {
-  vec3 d = p - eye;
-  float L = length(d);
-  float a = max((eye.y - u_fog.x) * u_fog.y, -8.0);
-  float b = max((p.y - u_fog.x) * u_fog.y, -8.0);
-  float k = b - a;
-  float e = abs(k) > 1e-3 ? (exp(-a) - exp(-b)) / k : exp(-a);
-  return u_fog.z * L * e + u_fogU * L;
+  float L = length(p - eye), dy = p.y - eye.y;
+  float mean = abs(dy) > 0.05 ? (fogF(p.y) - fogF(eye.y)) / dy : fogDens(0.5 * (p.y + eye.y));
+  return u_fog.z * L * mean + u_fogU * L;
 }
 vec3 floorLight(vec2 xz) { return textureLod(u_floor, (xz - u_floorRect.xy) * u_floorRect.zw, 0.0).rgb; }
 vec3 fogColour(vec3 p, vec3 fl) {
   float h = clamp((p.y - u_fog.x) * u_fog.y * 0.22, 0.0, 1.0);
   float pool = 1.0 - smoothstep(u_fade.z, u_fade.w, length(p.xz));
-  float deep = clamp(0.3 - (p.y - u_fog.x) * u_fog.y * 0.4, 0.0, 1.0);   // 0 above the fog's level, 1 well down in it
-  return (mix(u_fogLo, u_fogHi, h) + fl * (1.0 - 0.7 * h) + u_warm * (deep * deep)) * pool;
+  return (mix(u_fogLo, u_fogHi, h) + fl * (1.0 - 0.7 * h)) * pool;
 }
 float hazeAt(float dist) { return 1.0 - exp(-u_haze.w * dist); }`;
 
@@ -58,6 +60,9 @@ flat out vec3 v_conic;
 flat out vec3 v_col;
 flat out vec3 v_aux;
 flat out float v_fade;
+// traffic of every colour: the colours a bunch of cars may have, and the darker ones for the glow they throw
+const int RB[10] = int[10](24, 30, 34, 35, 40, 27, 44, 8, 46, 25);
+const int RBH[10] = int[10](21, 28, 32, 33, 38, 11, 43, 42, 16, 22);
 float hash1(float x) {
   uint n = floatBitsToUint(x * 12.9898 + 0.5);
   n ^= n >> 16; n *= 0x7feb352du; n ^= n >> 15; n *= 0x846ca68bu; n ^= n >> 16;
@@ -99,6 +104,14 @@ void main() {
       bright = mix(1.0, bright, amp);
     } else {
       if (fract(u) > 0.07) al = 0.0;   // a lit car going by: a train, a lift
+    }
+    if ((flags & 32) != 0) {       // each bunch of cars (each lone car) its own colour, carried along with it
+      int ci = min(9, int(hash1(floor(rg > 0.0 ? u * 2.0 : u) * 1.618 + ph * 91.0) * 10.0));
+#ifdef ADDITIVE
+      pal = RBH[ci];
+#else
+      pal = RB[ci];
+#endif
     }
   }
   else if (kind == 4) {            // a beacon
@@ -213,7 +226,7 @@ void main() {
   col *= (1.0 - F) * (1.0 - 0.8 * Hz) * (1.0 - far) * (1.0 - u_gfade);
   v_aux = vec3(0.0, 1.0, al);
 #else
-  if (em) { F *= 0.72; far *= far; Hz *= 0.45; }
+  if (em) { F *= (flags & 2) != 0 ? 0.42 : 0.72; far *= far; Hz *= 0.45; }   // (a bright lamp shows through haze; one far below keeps most of its colour)
   col = mix(col, fogColour(pw, fl), F);
   col = mix(col, u_haze.rgb, max(Hz, far));   // the farther, the more it is the colour of the air; at the city's edge, nothing else
   // (what is all but lost in the dark at the edge of the city is not given an inked outline against it)
@@ -283,16 +296,16 @@ layout(location = 0) out vec4 o_col;
 layout(location = 1) out vec4 o_aux;
 void main() {
   vec3 d = normalize(u_cf + u_cr * (v_uv.x * u_tan.x) + u_cu * (v_uv.y * u_tan.y));
-  float H = 1.0 / u_fog.y, a = max((u_eye.y - u_fog.x) * u_fog.y, -8.0);
+  float H = 1.0 / u_fog.y, a = (u_eye.y - u_fog.x) * u_fog.y;
   vec3 col;
   if (d.y < -0.002) {
-    float q = exp(-a) + (-d.y) / (u_fog.z * H);
-    float ys = u_fog.x - H * log(q);
+    float yc = u_fog.x - u_fogC * H,                                   // where the fog stops thickening
+      tauC = u_fog.z * (fogF(u_eye.y) - fogF(yc)) / (-d.y), ys;
+    if (tauC >= 1.0) ys = u_fog.x - H * log(exp(-a) + (-d.y) / (u_fog.z * H));
+    else ys = yc - (1.0 - tauC) * (-d.y) / (u_fog.z * exp(u_fogC));
     float L = (ys - u_eye.y) / d.y;
     vec3 p = u_eye + d * L;
-    float pool = 1.0 - smoothstep(u_fade.z, u_fade.w, length(p.xz));
-    // looking down into it, the light from below shows through: the steeper, the more
-    col = fogColour(p, floorLight(p.xz)) + u_warm * (pow(-d.y, 3.0) * 1.15 * pool);
+    col = fogColour(p, floorLight(p.xz));
     col = mix(col, u_haze.rgb, hazeAt(max(L - 220.0, 0.0)));
   } else {
     // above the horizon: the same air, thinning upward into the black
@@ -359,7 +372,7 @@ void main() {
   vec3 c;
   if (hazy > 3.5) {
     // nothing but haze here: no outline, and a stronger ordered dither so its slow gradients band softly
-    float noise = ((BAYER[(p.x & 3) + ((p.y & 3) << 2)] + 0.5) / 16.0 - 0.5) * u_dither * 2.6;
+    float noise = ((BAYER[(p.x & 3) + ((p.y & 3) << 2)] + 0.5) / 16.0 - 0.5) * u_dither * 1.5;
     c = clamp(pixelNative(p) + noise, 0.0, 1.0);
   } else c = pixelResolve(p);
   o_col = vec4(pixelMapped(pixelNearest(c, false)), 1.0);

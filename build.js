@@ -52,9 +52,11 @@ const P = pack(groups);
 lap('packed ' + P.N + ' splats in ' + P.groups.length + ' groups: ' + (P.raw / 1e6).toFixed(2) + ' MB raw, ' + (P.bin.length / 1e6).toFixed(2) + ' MB gzipped');
 
 W.meta.look = {
-  fogY: -104,
-  fogH: 32,
-  fogRho: 0.021,
+  // height fog: density fogRho at fogY, rising e-fold every fogH units down, no denser below fogC scale heights under fogY
+  fogY: -110,
+  fogH: 24,
+  fogRho: 0.0085,
+  fogC: 0.85,
   fogU: 0,
   sky: 1,
   upH: 44,
@@ -62,10 +64,10 @@ W.meta.look = {
   far1: 765,
   pool0: 380,
   pool1: 700,
-  fogLo: [0.03, 0.024, 0.052],
-  fogHi: [0.14, 0.115, 0.25],
-  haze: [0.112, 0.094, 0.21, 0.0017],
-  warm: [0.44, 0.3, 0.07],
+  fogLo: [0.2, 0.183, 0.255], // deep in it: grey-violet, lit a little from below
+  fogHi: [0.1, 0.09, 0.155],
+  haze: [0.125, 0.112, 0.2, 0.0017], // the air between the eye and far things
+  warm: [0.06, 0.045, 0.03], // light from the city under the fog, on what stands in it
   dil: 0.3,
   dither: 0.014,
   rim: 1

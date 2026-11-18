@@ -1,56 +1,59 @@
 /* The city's palette: 48 colours, the most the toolkit's PixelLook shader resolves.
-   Hues are taken from the reference painting (plum blacks, slate blue, blue-violet haze, golden yellow, amber, red, violet), pushed
-   apart for contrast, and cleaned up into ramps that run dark to light. Two slots (8, 27) hold a green and a blue for shop lights. Index 0 is the void; PixelLook keeps it for the background, so no solid is ever painted with it. */
+   Made by tools/palette_gen.py from even OKLCH steps: the ramps run smoothly, and the accent hues (gold, orange, crimson, violet, cyan,
+   blue, green) sit at matched lightness and chroma, so the night reads as one scheme however many colours are lit. Hues follow the
+   reference painting: indigo-plum structure, blue-violet haze that turns mauve-grey where it is lit, soft gold.
+   Index 0 is the void; PixelLook keeps it for the background, so no solid is ever painted with it. Indices are used by number all
+   over the scene code: change a value freely, never the order. */
 const NeonPalette = (() => {
   const hex = [
-    0x05040a, // 0  void
-    0x0d0a10, // 1  structure (plum black) ...
-    0x16111b, // 2
-    0x211a29, // 3
-    0x2f2539, // 4
-    0x40334d, // 5
-    0x564564, // 6
-    0x715e80, // 7
-    0x3ee07f, // 8  green (street lights)
-    0x111a2e, // 9  slate (cool faces, glass) ...
-    0x1b2947, // 10
-    0x293e66, // 11
-    0x3f588e, // 12
-    0x6c86bd, // 13
-    0x17132c, // 14 haze (blue-violet) ...
-    0x211b3f, // 15
-    0x2e2654, // 16
-    0x3e346b, // 17
-    0x534784, // 18
-    0x6f62a0, // 19
-    0x2c1d08, // 20 amber / yellow ...
-    0x573d10, // 21
-    0x8a6618, // 22
-    0xc49a22, // 23
-    0xf2cc2e, // 24
-    0xffe86e, // 25
-    0xfffbd6, // 26
-    0x2f6bff, // 27 blue (street lights)
-    0x7a2a12, // 28 orange / red ...
-    0xb4481a, // 29
-    0xea6c1e, // 30
-    0xffa040, // 31
-    0x4a1028, // 32 crimson / pink ...
-    0x8a1a3c, // 33
-    0xd62a52, // 34
-    0xff5c8a, // 35
-    0xffa8c4, // 36
-    0x1c1240, // 37 violet ...
-    0x35207a, // 38
-    0x5a3cc0, // 39
-    0x8566f5, // 40
-    0xb9a6ff, // 41
-    0x0e3040, // 42 cyan ...
-    0x1a6688, // 43
-    0x2fb4e0, // 44
-    0xa4f0ff, // 45
-    0xd8cfa0, // 46 warm window white
-    0xf4f8ff //  47 cool white (plasma core)
+    0x030309, // 0  void
+    0x0b0812, // 1  structure (indigo-plum greys) ...
+    0x13101d, // 2
+    0x1d1a2a, // 3
+    0x2a273a, // 4
+    0x39384d, // 5
+    0x4c4b64, // 6
+    0x63637d, // 7
+    0x67d89c, // 8  green (shop lights, signals)
+    0x0d1624, // 9  slate blue (glass, cool faces) ...
+    0x19273b, // 10
+    0x293b56, // 11
+    0x405677, // 12
+    0x6a82a4, // 13
+    0x151325, // 14  haze (blue-violet, mauve-grey where lit) ...
+    0x221f35, // 15
+    0x322e46, // 16
+    0x443e56, // 17
+    0x5b5268, // 18
+    0x77697b, // 19
+    0x38240f, // 20  gold (soft, creamy at the top) ...
+    0x563913, // 21
+    0x7b551b, // 22
+    0xa67a32, // 23
+    0xcfa352, // 24
+    0xebce8a, // 25
+    0xf8efcf, // 26
+    0x5992e7, // 27  blue
+    0x773822, // 28  orange / tail red ...
+    0xa7542e, // 29
+    0xd07940, // 30
+    0xeaa76b, // 31
+    0x4c1b27, // 32  crimson / pink ...
+    0x792b3f, // 33
+    0xaf455f, // 34
+    0xdc7795, // 35
+    0xf0b4c9, // 36
+    0x281f45, // 37  violet ...
+    0x423272, // 38
+    0x634fa3, // 39
+    0x8c78d3, // 40
+    0xbbb0f3, // 41
+    0x0f3845, // 42  cyan ...
+    0x1b6b80, // 43
+    0x3fa8c0, // 44
+    0xa8e8ef, // 45
+    0xece0c4, // 46  warm window white
+    0xf1f8ff  // 47  cool white (plasma core)
   ];
   // ramps, dark to light, as palette indices
   const R = {
