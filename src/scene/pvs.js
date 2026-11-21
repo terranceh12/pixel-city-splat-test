@@ -66,9 +66,12 @@ function visibility(C, o) {
      that margin is what lets one eye position speak for the ones between it and the next: an occluder at depth a hides a place at
      depth b only if the two cannot slide by more than that pixel across each other in half a step of the eye (1/a - 1/b small).
      Far things slide little, so they are tried from every second position only. */
+  // (the depth picture is drawn through the same fisheye as the page: lens units, and distance from the eye for depth)
   const f = o.f || 170,
-    TH = 1.07, // half the picture, as tangents: the widest lens any window gives, its border of spare pixels, and room to spare
-    TV = 0.97,
+    TH = CP.C.tanHMax * 1.1, // half the picture, in lens units: the widest any window gives, its border of spare pixels, and room to spare
+    TV = CP.C.tanVMax * 1.06,
+    lensR = CP.lensR,
+    THMAX = CP.lensTh(Math.hypot(TH, TV)),
     W = Math.ceil(2 * f * TH),
     H = Math.ceil(2 * f * TV),
     zb = new Float32Array(W * H),
@@ -121,9 +124,22 @@ function visibility(C, o) {
           dz = s.c[2] - ez,
           d = f0 * dx + f1 * dy + f2 * dz,
           rad = sr[si];
-        if (d < -rad) continue;
-        const dd = Math.max(d, 0);
-        if (Math.abs(r0 * dx + r1 * dy + r2 * dz) > dd * TH + rad * 1.6 || Math.abs(u0 * dx + u1 * dy + u2 * dz) > dd * TV + rad * 1.6) continue;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > rad) {
+          // (is any of its bounding sphere in the picture? its middle in lens units, and its angular size there, with room)
+          const cx0 = r0 * dx + r1 * dy + r2 * dz,
+            cy0 = u0 * dx + u1 * dy + u2 * dz,
+            rho = Math.hypot(cx0, cy0),
+            th = Math.atan2(rho, d),
+            al = Math.asin(Math.min(1, rad / dist)) * 1.3;
+          if (th - al > THMAX) continue;
+          if (th < 1.4) {
+            const g = rho > 1e-9 ? lensR(th) / rho : 1 / d,
+              ca = Math.cos(CP.C.k * Math.min(1.5, th + al)),
+              rl = al / (ca * ca); // (the most a lens unit can stretch over that angle, times the angle)
+            if (Math.abs(cx0 * g) - rl > TH || Math.abs(cy0 * g) - rl > TV) continue;
+          }
+        }
         todo.push(si);
         for (let i = s.start, e = s.start + s.count; i < e; i++) {
           const cx = X[i] - ex,
@@ -133,10 +149,17 @@ function visibility(C, o) {
             facing = -(cx * NV[q] + cy * NV[q + 1] + cz * NV[q + 2]) / 127;
           pi[i] = -1;
           if (facing <= 0) continue;
-          const dep = f0 * cx + f1 * cy + f2 * cz;
+          const dist2 = cx * cx + cy * cy + cz * cz,
+            dep = Math.sqrt(dist2); // (depth is distance from the eye, as on the page)
           if (dep < 0.6) continue;
-          const sx = W * 0.5 + (f * (r0 * cx + r1 * cy + r2 * cz)) / dep,
-            sy = H * 0.5 + (f * (u0 * cx + u1 * cy + u2 * cz)) / dep;
+          const lx = r0 * cx + r1 * cy + r2 * cz,
+            ly = u0 * cx + u1 * cy + u2 * cz,
+            rho = Math.hypot(lx, ly),
+            th = Math.atan2(rho, f0 * cx + f1 * cy + f2 * cz);
+          if (th > 1.45) continue;
+          const g = rho > 1e-9 ? lensR(th) / rho : 1 / dep,
+            sx = W * 0.5 + f * lx * g,
+            sy = H * 0.5 + f * ly * g;
           if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
           const ix = sx | 0,
             iy = sy | 0,
@@ -144,9 +167,8 @@ function visibility(C, o) {
           pi[i] = p;
           pd[i] = dep;
           if (!OC[i] || dep < nearOcc) continue;
-          const dist2 = cx * cx + cy * cy + cz * cz;
           if (facing * facing < dist2 * 0.04) continue; // (edge-on: it would be drawn far wider than it is)
-          const side = (f * R[i]) / dep,
+          const side = (f * R[i]) / dep, // (the fisheye never draws a thing smaller than this: the occluder errs small)
             h = side < 0.7 ? 0 : side > 9 ? 5 : Math.round(side * 0.5);
           if (h < 1) {
             if (dep < zb[p]) zb[p] = dep;

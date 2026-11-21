@@ -1,7 +1,10 @@
 /* The camera, shared by the baker (Node) and the page.
-   An orbit about the bend in the elevated highway (the world origin). The origin pose is matched to the reference painting:
-   a 494 x 738 frame, 60 degrees tall, in which the bend sits at pixel (275, 258). The bend is pinned there for every pose, so
-   the picture turns about it. */
+   An orbit about the bend in the elevated highway (the world origin). The world was laid out to the reference painting, seen
+   through an ordinary lens: a 494 x 738 frame, 60 degrees tall, in which the bend sits at pixel (275, 258) (poseRef, toRef).
+   The picture is drawn through a fisheye: a direction theta off the axis lands tan(k theta) / k "lens units" from the middle of
+   the picture (k = 1 would be the ordinary lens; smaller k bends straight lines more and takes in more). The reference frame is
+   92 degrees tall through it, and no window is more than 120 degrees wide. The bend is still pinned at pixel (275, 258) of the
+   reference frame, for every pose, so the picture turns about it. */
 const CamPath = (() => {
   const RAD = Math.PI / 180;
   const C = {
@@ -12,21 +15,48 @@ const CamPath = (() => {
     elUp: 36 * RAD, // hover to the top of the screen
     elDown: 3.4 * RAD, // hover to the bottom
     refAspect: 494 / 738,
-    tanV: Math.tan(30 * RAD), // half of the reference frame's 60 degrees
-    tanHMax: Math.tan(43 * RAD), // widest half-angle allowed sideways
-    pinX: (275 - 247) / 639, // where the bend sits in the frame, as tangents from the optical axis
-    pinY: (369 - 258) / 639
+    k: 0.4, // the fisheye
+    fovV: 46 * RAD, // half the reference frame's height, as an angle off the axis
+    fovHMax: 60 * RAD, // the widest half-angle allowed sideways
+    // the ordinary lens the world was laid out with: half the reference frame's 60 degrees, and the bend's place, as tangents
+    tanV0: Math.tan(30 * RAD),
+    pinX0: (275 - 247) / 639,
+    pinY0: (369 - 258) / 639
   };
-  // az, el in radians (absolute). Returns eye and the three camera axes (right, up, forward)
-  function pose(az, el) {
+  // the fisheye: angle off the axis to lens units, and back
+  const lensR = th => Math.tan(C.k * th) / C.k,
+    lensTh = r => Math.atan(C.k * r) / C.k;
+  C.tanV = lensR(C.fovV); // (half the reference frame's height, in lens units; the names are kept from the ordinary lens)
+  C.tanHMax = lensR(C.fovHMax);
+  C.tanVMax = lensR(62 * RAD); // (a very tall, narrow window goes no taller than this: it narrows instead)
+  C.pinX = ((275 - 247) / 369) * C.tanV; // where the bend sits in the frame, in lens units from the middle
+  C.pinY = ((369 - 258) / 369) * C.tanV;
+  // the way a lens point (lens units from the middle) looks, in camera space: [right, up, forward]
+  function lensDir(u, v) {
+    const r = Math.hypot(u, v);
+    if (r < 1e-9) return [0, 0, 1];
+    const th = lensTh(r),
+      s = Math.sin(th);
+    return [(u / r) * s, (v / r) * s, Math.cos(th)];
+  }
+  // camera space to lens units (null past 83 degrees off the axis: never in any picture)
+  function toLens(c) {
+    const rho = Math.hypot(c[0], c[1]),
+      th = Math.atan2(rho, c[2]);
+    if (th > 1.45) return null;
+    const g = rho > 1e-9 ? lensR(th) / rho : 1 / c[2];
+    return [c[0] * g, c[1] * g];
+  }
+  // az, el in radians (absolute). Returns eye and the three camera axes (right, up, forward), turned so that the bend lies along
+  // the camera-space direction `pin`
+  function orient(az, el, pin) {
     const ce = Math.cos(el),
       eye = [C.R * ce * Math.sin(az), C.R * Math.sin(el), C.R * ce * Math.cos(az)],
       ul = Math.hypot(eye[0], eye[1], eye[2]),
       u = [-eye[0] / ul, -eye[1] / ul, -eye[2] / ul],
-      nl = Math.hypot(C.pinX, C.pinY, 1),
-      a = C.pinX / nl,
-      b = C.pinY / nl,
-      c = 1 / nl,
+      a = pin[0],
+      b = pin[1],
+      c = pin[2],
       r = Math.hypot(b, c),
       phi = Math.acos(Math.max(-1, Math.min(1, u[1] / r))) - Math.atan2(c, b),
       g = -(b * Math.sin(phi) + c * Math.cos(phi)),
@@ -44,16 +74,28 @@ const CamPath = (() => {
       pitch: phi
     };
   }
+  const PIN = lensDir(C.pinX, C.pinY),
+    PIN0 = (() => {
+      const nl = Math.hypot(C.pinX0, C.pinY0, 1);
+      return [C.pinX0 / nl, C.pinY0 / nl, 1 / nl];
+    })();
+  // the pose drawn (through the fisheye), and the pose the world was laid out with (through the ordinary lens)
+  const pose = (az, el) => orient(az, el, PIN),
+    poseRef = (az, el) => orient(az, el, PIN0);
   // hover position mx, my in -1..1 (my up) to az, el
   function hover(mx, my) {
     return [C.az0 + mx * C.azRange, C.el0 + (my > 0 ? my * C.elUp : my * C.elDown)];
   }
-  // half-angles (as tangents) for a viewport of the given aspect (w / h)
+  // half the picture's width and height, in lens units, for a viewport of the given aspect (w / h)
   function lens(aspect) {
     let tanV, tanH;
     if (aspect <= C.refAspect) {
       tanH = C.tanV * C.refAspect;
       tanV = tanH / aspect;
+      if (tanV > C.tanVMax) {
+        tanV = C.tanVMax;
+        tanH = tanV * aspect;
+      }
     } else {
       tanV = C.tanV;
       tanH = tanV * aspect;
@@ -75,7 +117,7 @@ const CamPath = (() => {
       P.fwd[0] * dx + P.fwd[1] * dy + P.fwd[2] * dz
     ];
   }
-  // reference-frame pixel (494 x 738) of a world point at the origin pose, and back
+  // reference-frame pixel (494 x 738) of a world point at the origin pose, and back: through the ordinary lens (pass poseRef)
   const REF = { w: 494, h: 738, f: 639 };
   function toRef(P, p) {
     const c = toCam(P, p);
@@ -101,6 +143,6 @@ const CamPath = (() => {
     const d = refRay(P, u, v);
     return [P.eye[0] + d[0] * depth, P.eye[1] + d[1] * depth, P.eye[2] + d[2] * depth];
   }
-  return { C, RAD, REF, pose, hover, lens, toCam, toRef, refRay, refToLevel, refToDepth };
+  return { C, RAD, REF, pose, poseRef, hover, lens, lensR, lensTh, lensDir, toLens, toCam, toRef, refRay, refToLevel, refToDepth };
 })();
 if (typeof module !== 'undefined') module.exports = CamPath;

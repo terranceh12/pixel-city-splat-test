@@ -6,7 +6,7 @@
      [x, y, z, alpha] [ax, ay, az, sigma along axis] [sigma across, palette index, kind, flags] [phase, speed, range, extra] */
 const zlib = require('zlib');
 const ROW = 16;
-const F = { EM: 1, NOFOG: 2, LIT: 4, BIG: 8, ADD: 16, RAINBOW: 32 };
+const F = { EM: 1, NOFOG: 2, LIT: 4, BIG: 8, ADD: 16, RAINBOW: 32, MSH: 64 }; // (MSH: the moon cannot see it)
 /* motion kinds the page's vertex shader knows */
 const KIND = {
   STILL: 0,

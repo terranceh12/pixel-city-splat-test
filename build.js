@@ -31,6 +31,8 @@ const lights = W.layLights();
 lap('lit ' + lights + ' windows and roof lamps');
 const laid = W.bakeBoxes();
 lap('baked ' + laid + ' solids');
+const ms = W.moonShade();
+lap('moon shadows: ' + ms.marked + ' of ' + ms.tested + ' splats it would light are in shadow (' + ms.texel.toFixed(2) + ' units to a texel)');
 buildShips(W);
 lap('ships sculpted');
 const groups = W.finish();
@@ -70,7 +72,8 @@ W.meta.look = {
   warm: [0.06, 0.045, 0.03], // light from the city under the fog, on what stands in it
   dil: 0.3,
   dither: 0.014,
-  rim: 1
+  rim: 1,
+  moon: { dir: W.moon.map(v => +v.toFixed(4)), col: [0.31, 0.36, 0.62] } // the way to the moon, and its light (cool, silvery)
 };
 const strip = g => {
   const o = {};

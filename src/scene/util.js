@@ -40,10 +40,11 @@ function eyes(na, ne) {
 const EYES = eyes(15, 9);
 const EYE_MAX_Y = Math.max(...EYES.map(e => e.eye[1])),
   EYE_MIN_Y = Math.min(...EYES.map(e => e.eye[1]));
-/* how near the eye ever comes to a place while that place is in the picture (the widest lens any window gives, and a margin).
-   A roof right under the eye's path is never seen from there: the picture's lower edge passes well in front of it. */
-const SEE_H = 1.05,
-  SEE_V = 0.95;
+/* how near the eye ever comes to a place while that place is in the picture (the widest picture any window gives through the
+   fisheye, in lens units, and a margin). A roof right under the eye's path is never seen from there: the picture's lower edge
+   passes well in front of it. */
+const SEE_H = CP.C.tanHMax * 1.08,
+  SEE_V = CP.C.tanVMax * 1.03;
 function seenFrom(x, y, z, m) {
   let best = 1e9;
   m = m || 0;
@@ -51,13 +52,18 @@ function seenFrom(x, y, z, m) {
     const dx = x - e.eye[0],
       dy = y - e.eye[1],
       dz = z - e.eye[2],
-      d = e.fwd[0] * dx + e.fwd[1] * dy + e.fwd[2] * dz;
-    if (d < 0.5 - m) continue;
-    const dd = Math.max(d, 0.5);
-    if (Math.abs(e.right[0] * dx + e.right[1] * dy + e.right[2] * dz) > dd * SEE_H + m * 1.4) continue;
-    if (Math.abs(e.up[0] * dx + e.up[1] * dy + e.up[2] * dz) > dd * SEE_V + m * 1.4) continue;
-    const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (l < best) best = l;
+      l = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (l >= best) continue;
+    if (l > m + 0.5) {
+      const cx = e.right[0] * dx + e.right[1] * dy + e.right[2] * dz,
+        cy = e.up[0] * dx + e.up[1] * dy + e.up[2] * dz,
+        cz = e.fwd[0] * dx + e.fwd[1] * dy + e.fwd[2] * dz,
+        q = CP.toLens([cx, cy, cz]);
+      if (!q) continue;
+      const mm = (1.4 * m) / l;
+      if (Math.abs(q[0]) > SEE_H + mm || Math.abs(q[1]) > SEE_V + mm) continue;
+    }
+    best = l;
   }
   return best;
 }
@@ -70,8 +76,9 @@ function nearestEye(x, y, z) {
   return m;
 }
 /* the spacing to lay splats at so that each is about `px` art pixels across from the nearest the eye ever sees it
-   (a picture about 360 art pixels tall: one unit at distance d is 340 / d art pixels) */
-const F_ART = 340;
+   (a picture about 360 art pixels tall seen through the fisheye: one unit at distance d is about 300 / d art pixels, a little more
+   toward the edges, a little less in the middle) */
+const F_ART = 300;
 let PX = 2;
 const setPx = v => (PX = v),
   getPx = () => PX;

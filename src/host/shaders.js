@@ -46,6 +46,8 @@ uniform float u_mscale;
 uniform vec3 u_eye, u_cr, u_cu, u_cf;
 uniform vec2 u_focal, u_res, u_nf;
 uniform float u_t, u_dil, u_gfade, u_gfog, u_linFar, u_maxPt;
+uniform float u_k;                 // the fisheye: theta off the axis lands tan(k theta) / k lens units from the middle (u_focal: pixels per lens unit)
+uniform vec3 u_moonL, u_moonC;     // the way to the moon, and its light
 uniform vec3 u_pal[48];
 uniform int u_nl;
 uniform vec4 u_lp[6];
@@ -170,18 +172,30 @@ void main() {
   float sa = a_a.w * sc * u_mscale, sq = a_m.x * sc * u_mscale;
   vec3 dv = pw - u_eye;
   vec3 pc = vec3(dot(u_cr, dv), dot(u_cu, dv), dot(u_cf, dv));
-  if (pc.z < u_nf.x) return;
+  float dist = length(pc);
+  if (dist < u_nf.x) return;
+  // through the fisheye: where it lands (g: lens units per unit across, at this point) and how that moves as the point moves (the
+  // Jacobian, rows Jx and Jy, in pixels per unit), for its footprint. (Near the axis the exact terms lose their precision: there the
+  // series is used.)
+  float rho = length(pc.xy), th = atan(rho, pc.z);
+  if (th > 1.45) return;
+  float ck = cos(u_k * th), Rp = 1.0 / (ck * ck), id2 = 1.0 / (dist * dist), g, q;
+  if (rho < 0.02 * pc.z) {
+    g = 1.0 / pc.z;
+    q = 0.6667 * (u_k * u_k - 1.0) / (pc.z * pc.z * pc.z);
+  } else {
+    g = tan(u_k * th) / (u_k * rho);
+    q = (Rp * pc.z * id2 - g) / (rho * rho);
+  }
   vec3 av = vec3(dot(u_cr, aw), dot(u_cu, aw), dot(u_cf, aw));
-  float iz = 1.0 / pc.z;
-  vec2 lim = 0.65 * u_res / u_focal;
-  vec2 tq = clamp(pc.xy * iz, -lim, lim);
-  float j00 = u_focal.x * iz, j11 = u_focal.y * iz, j02 = -u_focal.x * tq.x * iz, j12 = -u_focal.y * tq.y * iz;
+  vec3 Jx = u_focal.x * vec3(g + pc.x * pc.x * q, pc.x * pc.y * q, -pc.x * Rp * id2);
+  vec3 Jy = u_focal.y * vec3(pc.x * pc.y * q, g + pc.y * pc.y * q, -pc.y * Rp * id2);
   float s2 = sq * sq, D = sa * sa - s2;
-  vec2 u2 = vec2(j00 * av.x + j02 * av.z, j11 * av.y + j12 * av.z);
+  vec2 u2 = vec2(dot(Jx, av), dot(Jy, av));
   float dil = u_dil * ((flags & 8) != 0 ? 4.0 : 1.0);
-  float A = s2 * (j00 * j00 + j02 * j02) + D * u2.x * u2.x + dil;
-  float Bq = s2 * (j02 * j12) + D * u2.x * u2.y;
-  float C = s2 * (j11 * j11 + j12 * j12) + D * u2.y * u2.y + dil;
+  float A = s2 * dot(Jx, Jx) + D * u2.x * u2.x + dil;
+  float Bq = s2 * dot(Jx, Jy) + D * u2.x * u2.y;
+  float C = s2 * dot(Jy, Jy) + D * u2.y * u2.y + dil;
   float det = A * C - Bq * Bq;
   if (!(det > 0.0)) return;
   v_conic = vec3(C / det, -Bq / det, A / det);
@@ -193,7 +207,7 @@ void main() {
   float rad = sqrt(-2.0 * cut);
 #endif
   vec2 ext = min(rad * sqrt(vec2(A, C)) + 0.5, vec2(1024.0));
-  vec2 c = pc.xy * iz * u_focal;
+  vec2 c = pc.xy * g * u_focal;
   if (abs(c.x) - ext.x > 0.5 * u_res.x || abs(c.y) - ext.y > 0.5 * u_res.y) return;
 #ifdef ADDITIVE
   v_d = a_corner * ext;
@@ -217,7 +231,12 @@ void main() {
     }
     float up = exp(-max(0.0, pw.y - u_fog.x) * u_fog.w) * (lit ? 1.0 - 0.75 * max(0.0, aw.y) : 0.6);
     add += (fl + u_warm * 0.55) * (up * 0.6);
+    // the moon, off to one side: a cool light, cut off wherever the city's own bulk stands between (flag 64, worked out when baked)
+    add += u_moonC * ((flags & 64) != 0 ? 0.0 : lit ? max(0.0, dot(aw, u_moonL)) : 0.3);
     col += add * (0.32 + 1.3 * dot(col, vec3(0.30, 0.55, 0.15)));
+#ifdef MOONDBG
+    col = (flags & 64) != 0 ? vec3(0.6, 0.04, 0.04) : lit ? vec3(0.05, 0.12 + 0.7 * max(0.0, dot(aw, u_moonL)), 0.08) : vec3(0.22);
+#endif
   } else col *= bright;
   float F = 1.0 - exp(-fogTau(u_eye, pw) * u_gfog);   // (u_gfog: less fog for a ship that must show far down, the fast traffic)
   float far = smoothstep(u_fade.x, u_fade.y, length(pw.xz));
@@ -231,10 +250,10 @@ void main() {
   col = mix(col, fogColour(pw, fl), F);
   col = mix(col, u_haze.rgb, max(Hz, far));   // the farther, the more it is the colour of the air; at the city's edge, nothing else
   // (what is all but lost in the dark at the edge of the city is not given an inked outline against it)
-  v_aux = vec3(far > 0.6 ? 1.0 : min(0.98, pc.z / u_linFar), em ? 1.0 : 0.0, cut);
+  v_aux = vec3(far > 0.6 ? 1.0 : min(0.98, dist / u_linFar), em ? 1.0 : 0.0, cut);
 #endif
   v_col = col;
-  float zn = (u_nf.y + u_nf.x) / (u_nf.y - u_nf.x) - (2.0 * u_nf.y * u_nf.x) / ((u_nf.y - u_nf.x) * pc.z);
+  float zn = (u_nf.y + u_nf.x) / (u_nf.y - u_nf.x) - (2.0 * u_nf.y * u_nf.x) / ((u_nf.y - u_nf.x) * dist);   // (depth: distance from the eye)
 #ifdef ADDITIVE
   gl_Position = vec4((c + v_d) / (0.5 * u_res), zn, 1.0);
 #else
@@ -291,12 +310,35 @@ precision highp sampler2D;
 in vec2 v_uv;
 uniform vec3 u_eye, u_cr, u_cu, u_cf;
 uniform vec2 u_tan;
-uniform float u_sky;
+uniform float u_sky, u_k, u_time, u_pxa;   // u_pxa: about the angle one pixel spans
+uniform vec3 u_moonL, u_moonC;
 ${FOG}
 layout(location = 0) out vec4 o_col;
 layout(location = 1) out vec4 o_aux;
+float h3(vec3 p) {
+  uvec3 q = uvec3(ivec3(p) + 4096);
+  uint n = q.x * 73856093u ^ q.y * 19349663u ^ q.z * 83492791u;
+  n ^= n >> 16; n *= 0x7feb352du; n ^= n >> 15; n *= 0x846ca68bu; n ^= n >> 16;
+  return float(n >> 8) / 16777216.0;
+}
+// the stars: at most one in each cell of a fine grid laid over the sky, well inside it, a pixel or so across; a few twinkle (in
+// steps, six a second, like everything else that changes light)
+vec3 stars(vec3 d) {
+  vec3 cell = floor(d * 110.0);
+  if (h3(cell) > 0.012) return vec3(0.0);
+  vec3 j = vec3(h3(cell + vec3(17.0, 3.0, 5.0)), h3(cell + vec3(7.0, 31.0, 11.0)), h3(cell + vec3(13.0, 2.0, 47.0)));
+  vec3 sp = normalize(cell + 0.3 + 0.4 * j);
+  float a = length(cross(d, sp)), b = h3(cell + vec3(5.0, 59.0, 3.0));
+  if (a > u_pxa * (b > 0.93 ? 0.85 : 0.55) || dot(d, sp) < 0.0) return vec3(0.0);
+  vec3 c = b < 0.62 ? vec3(0.42, 0.44, 0.56) : b < 0.86 ? vec3(0.66, 0.7, 0.86) : b < 0.95 ? vec3(0.86, 0.8, 0.66) : vec3(0.95, 0.97, 1.0);
+  float tw = j.x > 0.8 ? 0.7 + 0.3 * sin(floor(u_time * 6.0) / 6.0 * (1.5 + 4.0 * j.y) + 30.0 * j.z) : 1.0;
+  return c * tw;
+}
 void main() {
-  vec3 d = normalize(u_cf + u_cr * (v_uv.x * u_tan.x) + u_cu * (v_uv.y * u_tan.y));
+  // the ray through this pixel, through the fisheye
+  vec2 lp = vec2(v_uv.x * u_tan.x, v_uv.y * u_tan.y);
+  float lr = length(lp), lth = atan(u_k * lr) / u_k;
+  vec3 d = lr > 1e-6 ? normalize(u_cf * cos(lth) + (u_cr * lp.x + u_cu * lp.y) * (sin(lth) / lr)) : u_cf;
   float H = 1.0 / u_fog.y, a = (u_eye.y - u_fog.x) * u_fog.y;
   vec3 col;
   if (d.y < -0.002) {
@@ -309,8 +351,14 @@ void main() {
     col = fogColour(p, floorLight(p.xz));
     col = mix(col, u_haze.rgb, hazeAt(max(L - 220.0, 0.0)));
   } else {
-    // above the horizon: the same air, thinning upward into the black
-    col = u_haze.rgb * (1.0 - exp(-u_haze.w * 1500.0 * exp(-d.y * 9.0))) * u_sky;
+    // above the horizon: the same air, thinning upward into the black, and the stars in the black
+    float air = 1.0 - exp(-u_haze.w * 1500.0 * exp(-d.y * 9.0));
+    col = u_haze.rgb * air * u_sky;
+    // the moon's light in the air round it, and the moon itself (it stands off to one side: seldom in the picture)
+    float mc = max(dot(d, u_moonL), 0.0);
+    col += u_moonC * (0.06 * pow(mc, 30.0) + 0.025 * pow(mc, 5.0)) * u_sky;
+    if (mc > 0.99992) col = vec3(0.84, 0.86, 0.9);
+    col += stars(d) * clamp(1.0 - air * 2.6, 0.0, 1.0) * u_sky;
   }
   o_col = vec4(col, 1.0);
   // lit haze counts as something that is there (so what stands in front of it is not inked round as if against the void), and says so in b

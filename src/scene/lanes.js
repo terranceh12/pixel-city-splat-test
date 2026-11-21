@@ -331,7 +331,7 @@ function planLanes(W, o) {
      at least `least` from everywhere the eye can be and clear of everything built. tMid: when (seconds after the page opens) it is
      first at its nearest. */
   const CP = U.CP,
-    P0 = CP.pose(CP.C.az0, CP.C.el0);
+    P0 = CP.poseRef(CP.C.az0, CP.C.el0); // (laid out through the ordinary lens, as they always were)
   function close(kind, q) {
     const k = SHIP[kind],
       sc = q.sc || 1;

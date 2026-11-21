@@ -180,10 +180,12 @@ function makeWorld(kit, opt) {
     }
     return { cands: W.vis.length, seen: n, by };
   };
-  // a sculptor set for the night: a low moon from the right and in front, a little sky, short contact shade
+  /* the moon: low on the right, a little toward the eye's side, never in the picture. The sculptor shades by it (short contact
+     shade), the page lights by it (a cool light), and its long shadows are worked out once, here, by W.moonShade */
+  W.moon = B.norm([0.78, 0.52, 0.2]);
   W.sculptor = o => {
     const S = K.sculpt(makeSculpt(B));
-    S.sun = B.norm([0.59, 0.74, 0.33]);
+    S.sun = W.moon;
     S.amb = 0.1;
     S.sky = 0.1;
     S.sunK = 0.42;
@@ -240,6 +242,82 @@ function makeWorld(kit, opt) {
     S.bake();
     W.take();
     return laid;
+  };
+  /* the moon's shadows. A depth picture of every place a splat may be laid (seen or not: the backs of things cast shadows too),
+     drawn from the moon over the city within `rad` of the bend; then every splat laid so far that is not a light is marked (MSH)
+     where something stands between it and the moon. Each place is drawn a little wider than its spacing, so walls come out whole;
+     each splat is tested from a little off its surface (out along its normal, and toward the moon), so it does not shade itself. */
+  W.moonShade = o => {
+    o = o || {};
+    W.take();
+    const L = W.moon,
+      Fm = [-L[0], -L[1], -L[2]],
+      Uh = B.norm([Fm[2], 0, -Fm[0]]),
+      Vv = [Uh[1] * Fm[2] - Uh[2] * Fm[1], Uh[2] * Fm[0] - Uh[0] * Fm[2], Uh[0] * Fm[1] - Uh[1] * Fm[0]],
+      RAD = o.rad || 480,
+      R2 = RAD * RAD,
+      SZ = o.size || 4096,
+      { n, X, Y, Z, R, OC } = cands.arrays();
+    let u0 = 1e9,
+      u1 = -1e9,
+      v0 = 1e9,
+      v1 = -1e9;
+    for (let i = 0; i < n; i++) {
+      if (X[i] * X[i] + Z[i] * Z[i] > R2) continue;
+      const u = X[i] * Uh[0] + Y[i] * Uh[1] + Z[i] * Uh[2],
+        v = X[i] * Vv[0] + Y[i] * Vv[1] + Z[i] * Vv[2];
+      if (u < u0) u0 = u;
+      if (u > u1) u1 = u;
+      if (v < v0) v0 = v;
+      if (v > v1) v1 = v;
+    }
+    const tx = Math.max(u1 - u0, v1 - v0) / (SZ - 8),
+      map = new Float32Array(SZ * SZ).fill(1e9);
+    for (let i = 0; i < n; i++) {
+      if (!OC[i] || X[i] * X[i] + Z[i] * Z[i] > R2) continue;
+      const cu = (X[i] * Uh[0] + Y[i] * Uh[1] + Z[i] * Uh[2] - u0) / tx + 4,
+        cv = (X[i] * Vv[0] + Y[i] * Vv[1] + Z[i] * Vv[2] - v0) / tx + 4,
+        d = X[i] * Fm[0] + Y[i] * Fm[1] + Z[i] * Fm[2],
+        h = Math.ceil((R[i] * 0.6) / tx),
+        x0 = Math.max(0, Math.floor(cu) - h),
+        x1 = Math.min(SZ - 1, Math.floor(cu) + h),
+        y0 = Math.max(0, Math.floor(cv) - h),
+        y1 = Math.min(SZ - 1, Math.floor(cv) + h);
+      for (let y = y0; y <= y1; y++) {
+        const row = y * SZ;
+        for (let x = x0; x <= x1; x++) if (d < map[row + x]) map[row + x] = d;
+      }
+    }
+    let tested = 0,
+      marked = 0;
+    const bias = 0.35 + 1.5 * tx;
+    for (const t of done)
+      for (let k = 0; k < t.n; k++) {
+        const r = t.rows,
+          q = k * ROW,
+          fl = r[q + 11];
+        if (fl & (F.EM | F.ADD)) continue;
+        const x = r[q],
+          y = r[q + 1],
+          z = r[q + 2];
+        if (x * x + z * z > R2) continue;
+        const lit = fl & F.LIT,
+          nl = r[q + 4] * L[0] + r[q + 5] * L[1] + r[q + 6] * L[2];
+        if (lit && nl <= 0.02) continue; // (turned away from the moon: the page gives it none of its light anyway)
+        const off = lit ? 0.25 + 1.2 * r[q + 8] : 0,
+          px = x + r[q + 4] * off + L[0] * 0.3,
+          py = y + r[q + 5] * off + L[1] * 0.3,
+          pz = z + r[q + 6] * off + L[2] * 0.3,
+          ix = Math.floor((px * Uh[0] + py * Uh[1] + pz * Uh[2] - u0) / tx + 4),
+          iy = Math.floor((px * Vv[0] + py * Vv[1] + pz * Vv[2] - v0) / tx + 4);
+        if (ix < 0 || iy < 0 || ix >= SZ || iy >= SZ) continue;
+        tested++;
+        if (map[iy * SZ + ix] < px * Fm[0] + py * Fm[1] + pz * Fm[2] - bias) {
+          r[q + 11] = fl | F.MSH;
+          marked++;
+        }
+      }
+    return { tested, marked, texel: tx };
   };
   // move what the recorder holds into the finished pile
   W.take = () => {

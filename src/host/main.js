@@ -61,7 +61,9 @@
   const withDef = (src, d) => src.replace('#version 300 es', '#version 300 es\n#define ' + d);
   let P_SOLID, P_GLOW, P_SKY, P_RES;
   try {
-    P_SOLID = program(SH.splatVS, SH.splatFS, { 1: 'a_p', 2: 'a_a', 3: 'a_m', 4: 'a_n' });
+    // (?moondbg: faces the moon lights drawn green, faces in the city's shadow red, to check the shadows while building)
+    const vs = /[?&]moondbg/.test(location.search) ? withDef(SH.splatVS, 'MOONDBG') : SH.splatVS;
+    P_SOLID = program(vs, SH.splatFS, { 1: 'a_p', 2: 'a_a', 3: 'a_m', 4: 'a_n' });
     P_GLOW = program(withDef(SH.splatVS, 'ADDITIVE'), withDef(SH.splatFS, 'ADDITIVE'));
     P_SKY = program(SH.quadVS, SH.skyFS);
     P_RES = program(SH.quadVS, SH.resolveFS);
@@ -522,20 +524,32 @@
   const pal3 = new Float32Array(48 * 3);
   PAL.rgb.forEach((c, i) => pal3.set(c, i * 3));
   const LOOK = META.look,
+    MOON = LOOK.moon || { dir: [0.8, 0.53, 0.2], col: [0, 0, 0] },
+    MOONK = qs.has('moonk') ? +qs.get('moonk') : 1, // (?moonk=4: the moonlight four times as strong, to see its shadows while building)
     NEAR = 0.6,
     FAR = 1400,
     stats = { drawn: 0, groups: 0, ms: 0, fps: 0 };
   let cam = null,
     lens = null;
+  // is any of this bounding sphere in the picture? (through the fisheye: its middle in lens units, and its angular size there, with room)
   function sees(x, y, z, rad) {
     const dx = x - cam.eye[0],
       dy = y - cam.eye[1],
       dz = z - cam.eye[2],
-      d = cam.fwd[0] * dx + cam.fwd[1] * dy + cam.fwd[2] * dz;
-    if (d < NEAR - rad) return false;
-    const cx = cam.right[0] * dx + cam.right[1] * dy + cam.right[2] * dz,
-      cy = cam.up[0] * dx + cam.up[1] * dy + cam.up[2] * dz;
-    return Math.abs(cx) < d * lens.tanH + rad * lens.kh && Math.abs(cy) < d * lens.tanV + rad * lens.kv;
+      dist = Math.hypot(dx, dy, dz);
+    if (dist <= rad + NEAR) return true;
+    const d = cam.fwd[0] * dx + cam.fwd[1] * dy + cam.fwd[2] * dz,
+      cx = cam.right[0] * dx + cam.right[1] * dy + cam.right[2] * dz,
+      cy = cam.up[0] * dx + cam.up[1] * dy + cam.up[2] * dz,
+      rho = Math.hypot(cx, cy),
+      th = Math.atan2(rho, d),
+      al = Math.asin(Math.min(1, rad / dist)) * 1.25;
+    if (th - al > lens.thMax) return false;
+    if (th > 1.4) return true;
+    const g = rho > 1e-9 ? CP.lensR(th) / rho : 1 / d,
+      ca = Math.cos(CP.C.k * Math.min(1.5, th + al)),
+      rl = al / (ca * ca);
+    return Math.abs(cx * g) - rl < lens.tanH && Math.abs(cy * g) - rl < lens.tanV;
   }
   function common(P, t) {
     const u = P.u;
@@ -548,6 +562,11 @@
     gl.uniform1f(u.u_fogC, LOOK.fogC === undefined ? 8 : LOOK.fogC);
     gl.uniform4f(u.u_fade, LOOK.far0, LOOK.far1, LOOK.pool0, LOOK.pool1);
     gl.uniform1f(u.u_fogU, LOOK.fogU || 0);
+    if (u.u_k) gl.uniform1f(u.u_k, CP.C.k);
+    if (u.u_moonL) {
+      gl.uniform3fv(u.u_moonL, MOON.dir);
+      gl.uniform3fv(u.u_moonC, MOON.col.map(v => v * MOONK));
+    }
     gl.uniform4fv(u.u_haze, LOOK.haze);
     gl.uniform3fv(u.u_warm, LOOK.warm);
     gl.uniform3fv(u.u_fogLo, LOOK.fogLo);
@@ -658,8 +677,7 @@
     lens.tanV0 = lens.tanV;
     lens.tanH *= (T.aw + 2 * T.ov) / T.aw;
     lens.tanV *= (T.ah + 2 * T.ov) / T.ah;
-    lens.kh = Math.hypot(1, lens.tanH);
-    lens.kv = Math.hypot(1, lens.tanV);
+    lens.thMax = CP.lensTh(Math.hypot(lens.tanH, lens.tanV)); // (the picture's corners, as an angle off the axis)
     stats.drawn = stats.groups = 0;
     stats.prof = {};
     stats.profT = performance.now();
@@ -690,6 +708,8 @@
     gl.depthMask(false);
     common(P_SKY, t);
     gl.uniform2f(P_SKY.u.u_tan, lens.tanH, lens.tanV);
+    gl.uniform1f(P_SKY.u.u_time, t);
+    gl.uniform1f(P_SKY.u.u_pxa, (2 * lens.tanV0) / T.ah); // (about the angle one art pixel spans, in the middle)
     gl.uniform1f(P_SKY.u.u_sky, LOOK.sky === undefined ? 1 : LOOK.sky);
     gl.bindVertexArray(quadVAO);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

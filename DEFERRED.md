@@ -5,7 +5,16 @@ what was worked around instead of solved, and how to check each next step.
 
 ## 1. What exists
 
-One self-contained page (`dist/index.html`, 2.43 MB) built by `node build.js` from the ink-studio toolkit.
+One self-contained page (`dist/index.html`, 2.72 MB) built by `node build.js` from the ink-studio toolkit.
+
+**Revision 6 (fisheye lens, stars, a moon that casts shadows, smaller low traffic).**
+- The camera is a fisheye (rule 2). A ray θ off the axis lands tan(0.4·θ)/0.4 from the middle of the frame, so straight edges bow outward toward the frame's sides and far more fits in. A portrait window is 46° high where it was 30°; a wide window shows up to 120° across. The bend is still pinned at the painting's pixel (275, 258), and the eye positions are unchanged.
+- Stars fill the sky: single art pixels, a few brighter, twinkling in steps, fading out in the haze toward the horizon (`skyFS` in `shaders.js`).
+- A moon hangs high to the east, 33° up and a little behind the eye, out of frame from every pose (its disc and halo are drawn in the sky all the same). It is the scene's key light (rule 19):
+  - faces that turn toward it get a cool, silvery light;
+  - the city's own bulk casts long shadows westward: towers onto lower roofs and the highway deck, the east bank down onto the ravine floors.
+  - The shadows are worked out once, at build time, from a depth map seen from the moon. About half of the moon-facing surface is in shadow.
+- The ships between this city and the one below are smaller, so the drop reads as longer. Every lane whose highest point is below y −15 flies its ship at 0.62 of its size at y −20, shrinking to 0.42 by y −87. This covers the open gap under the bridge, the convoys and packs in the ravines, and the low crossings. The racers deep under the floor are at 0.8, since they are already tiny. Ships at road height, the painted hauler and the close passes keep their size.
 
 **Revision 5 (the island opened underneath, low traffic on its open side).**
 - As in the painting, the abyss now shows under the near highway. Past its foot by the bend (z > 12) the island is a bridge: the highway, and the storeys under it that L1 runs through behind the slit, down to y −16. Below that there is nothing, down to the city far below.
@@ -47,9 +56,10 @@ One self-contained page (`dist/index.html`, 2.43 MB) built by `node build.js` fr
 | --- | --- | --- |
 | Sculpt | `src/scene/city.js`, `parts.js`, `ships.js` | Every solid is a signed-distance box, ball or lathe handed to the toolkit's sculptor (`makeSculpt`, `K.sculpt`). That covers roads, towers, cliffs (`PT.cliff`), cut-through towers (`PT.towerCut`), landmarks (`PT.landmark`), the megatower, 9 ship kinds (16 templates, counting near, parked, livery and colour variants) and the lift car. Pipes are laid by hand as rings of discs (`W.pipe`). The deep city is laid by hand as light strokes (`deepCity()`). |
 | Bake | toolkit `S.bake()` behind `src/bake/ir.js` | The sculptor projects sample points onto the SDF surface, lights them and emits splats. A recorder in front of the builder keeps the axis, two sigmas, palette index, motion kind and flags of each splat. |
-| Cull | `src/scene/pvs.js` | Before baking, candidate sample points are tested from 2,840 eye positions on the hover range. This removes 12 % (73 k of 595 k). |
-| Pack | `src/bake/ir.js` `pack()` | 16-bit positions per group, delta-coded, gzip. 645,216 splats pack to 1.53 MB. |
-| Draw | `src/host/main.js`, `shaders.js` | WebGL2. Solid splats are depth-tested point sprites cut at half strength. Glows are additive instanced quads. The scene is drawn at 2× art resolution, resolved by the toolkit's own `PixelLook.glsl`, then blown up in whole pixels. A 128² floor-light texture, recomputed each frame, tints the fog and lights walls from below. |
+| Cull | `src/scene/pvs.js` | Before baking, candidate sample points are tested from 2,840 eye positions on the hover range, each a depth picture taken through the same fisheye as the page. This removes 4 % (27 k of 660 k). |
+| Moon shadows | `src/scene/world.js` `W.moonShade()` | After the city is baked (and before the ships are), the candidates are drawn into a 4096² depth map seen from the moon, over radius 480 about the bend (0.18 units to a texel). Every lit splat that faces the moon but lies behind that map is flagged MSH (64): 128 k of 256 k. |
+| Pack | `src/bake/ir.js` `pack()` | 16-bit positions per group, delta-coded, gzip. 759,612 splats pack to 1.72 MB. |
+| Draw | `src/host/main.js`, `shaders.js` | WebGL2. Solid splats are depth-tested point sprites cut at half strength. Glows are additive instanced quads. Each splat's footprint is its covariance pushed through the fisheye's Jacobian (EWA), so splats stay whole as the lens bends; depth is distance from the eye. The scene is drawn at 2× art resolution, resolved by the toolkit's own `PixelLook.glsl`, then blown up in whole pixels. A 128² floor-light texture, recomputed each frame, tints the fog and lights walls from below. The moon lights every solid splat that faces it and is not flagged MSH. The sky shader draws the stars, the moon's disc and its halo. |
 
 Numbers from the last build:
 - 2,039 grid plots: 1,887 plain towers, 43 built round a road and 109 landmarks;
@@ -57,19 +67,21 @@ Numbers from the last build:
 - 5 lower highways, 3 high roads and 6 pipes;
 - 62 ship lanes (22 ships fly in 8 packs; 4 are close passes; 16 are racers in 4 streams);
 - 10 lift cars and 15 parked ships;
-- 379 fog-floor lights, 1,388 street lights and 90 signs;
-- 4,419 deep-city lights.
+- 379 fog-floor lights, 1,703 street lights and 89 signs (the wider lens sees more of the street lights, which are only laid where an eye can see them);
+- 4,487 deep-city lights.
 
-Bake time is 41 s, most of it the visibility pass.
+Bake time is about 150 s, nearly all of it the visibility pass. Its depth pictures are taken through the fisheye, which is slower than the old pinhole and covers more of the city.
 
 Rebuild with `node build.js`. The toolkit checkout is expected at `../siliconjungle/shapeshift-labs-ink-studio`; otherwise pass `--toolkit <path>`.
 
 Build flags:
-- `--quick`: coarse visibility, 13 s;
+- `--quick`: coarse visibility (eye step 3° instead of 1°);
 - `--px 2`: splat spacing in art pixels;
 - `--step 1`: eye step in degrees;
-- `--nocull`;
+- `--nocull`: skips the visibility pass, so a build takes about 15 s. Useful for trying changes to the scene; the result holds about 27 k more splats;
 - `--hist`: splat counts by distance and height.
+
+`node tools/repage.js` rewrites the page around the splats the last build packed, with the current `src/host/*`, `src/campath.js` and `src/palette.js`. It takes a few seconds. Use it for changes to the shaders or the host. The camera path is read again, but the splats were placed and culled for the path as it stood when baked, so a change to `campath.js` still needs a full build. So does a change to `look` in `build.js`, which travels in the packed meta.
 
 Page debug parameters:
 - `?debug`: fps and splat count;
@@ -77,7 +89,9 @@ Page debug parameters:
 - `?art=720`;
 - `?only=ship`;
 - `?not=tile`;
-- `?cam=ex,ey,ez,tx,ty,tz`: put the eye anywhere, looking at a target. Splat spacing is only right from the hover range, so views from elsewhere look coarse. Use them to check geometry, not looks.
+- `?cam=ex,ey,ez,tx,ty,tz`: put the eye anywhere, looking at a target. Splat spacing is only right from the hover range, so views from elsewhere look coarse. Use them to check geometry, not looks;
+- `?moonk=4`: the moonlight four times as strong, to see its shadows;
+- `?moondbg`: faces the moon lights drawn green and faces in its shadow red (after the palette resolve, teal and crimson).
 
 Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 738`. Each pose is `mx,my,t`, and the page parameters can be passed through `QS="cam=…&t=5"`.
 
@@ -87,9 +101,16 @@ Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 7
 2. **Camera.** `src/campath.js` is shared by the baker and the page.
    - The orbit radius is 68 about the bend. The origin pose matches the reference frame (494×738, bend pinned at pixel 275,258).
    - The hover range is ±35° azimuth, +36° / −3.4° elevation.
-   - **Changing any constant here requires a rebake**: splat spacing and culling are computed for this exact range.
+   - **The lens is a fisheye.** A ray θ off the axis lands `lensR(θ) = tan(kθ)/k` lens units from the middle of the frame, with `k` 0.4 (`lensTh` is the inverse). Its limits are:
+     - a portrait window is 46° high (`fovV`);
+     - a wide window reaches at most 60° to each side (`fovHMax`);
+     - a tall window reaches at most 62° up and down (`tanVMax`).
+   - The bend stays pinned at the reference pixel, measured in lens units. So the origin pose looks about 4.5° further down than the old 30° pinhole did (pitch 21° against 16.5°); the eye itself has not moved.
+   - **Things laid out in the old frame use `poseRef`**, the old pose through the old pinhole. These are the close passes (rule 15), placed by depth and lift in front of the starting eye, so they still pass where and when they were planned.
+   - **Everything that decides what the lens can see works in lens units.** That means `toLens` and `lensDir`, `seenFrom` (`util.js`, margins `SEE_H` and `SEE_V`), the visibility pass's depth pictures (`pvs.js`) and the page's group test `sees()` (`main.js`). The vertex shader projects with the fisheye's own Jacobian (`u_k`), and its depth is distance from the eye, not z. Change `k` or a field of view in all of them at once, by changing `campath.js`.
+   - **Changing any constant here requires a rebake**: splat spacing and culling are computed for this exact range and lens.
 3. **Nothing may stand in the eye's swept volume.** `city.js` caps tower tops inside the wedge az −50°…54°, radius 38–92. `lanes.js` keeps each ship a set distance from every eye position: 9–19 units times its scale, by kind, and 4.5–9 units for the close passes.
-4. **Splat spacing is chosen per box from the nearest eye that can actually see it** (`util.js seenFrom/resBox`). Walls are 4 art px, windows 2, decks 2.
+4. **Splat spacing is chosen per box from the nearest eye that can actually see it** (`util.js seenFrom/resBox`). Walls are 4 art px, windows 2, decks 2. Distance is turned into art pixels with `F_ART` (300). It was lowered from 340 with the fisheye, whose middle is less magnified than the old pinhole's.
 5. **The palette is 48 colours** (`src/palette.js`), the most `PixelLook.glsl` resolves.
    - The colours are generated: `python3 tools/palette_gen.py shots/swatch.png` prints the list for `src/palette.js` and writes a swatch. Edit a ramp in the script, not the hex.
    - Indices are referred to by number all over the scene code, so never reorder them:
@@ -131,7 +152,7 @@ Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 7
     - To change the car colours, edit those two lists of palette indices.
 14. **Landmarks are capped in height** to `6 + 0.16·r` (r is the distance from the bend) and enlarged 1.35× in plan, so their tops stay inside a landscape frame. Each reaches past its plot. Random ones are therefore kept 1.75 plot radii clear of roads and lanes, and hand-placed ones are cleared with `keep()`.
 15. **Close passes are planned from the origin pose.**
-    - `lanes.js close()` puts a lane through a point `depth` units in front of the origin eye, offset by `lift` and turned by `turn`.
+    - `lanes.js close()` puts a lane through a point `depth` units in front of the origin eye, offset by `lift` and turned by `turn`. "In front" means along the old pinhole pose (`poseRef`, rule 2), so the lanes did not move when the lens changed. Through the fisheye their straight runs bow a little as they cross the frame.
     - It then checks that the whole run stays `least` units from every hover pose (`util.js eyePatchDist`).
     - If none fits, it prints `(a close pass found no clear lane …)` and skips the ship.
     - Close ships use their own finer templates with smaller halos (`'wing-near'`, `'dart-near'`, `'liner-near'`, `haloK`).
@@ -150,13 +171,24 @@ Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 7
     - Nothing may be built under the bridge. L1's legs stop at x −17. L4 passes under the bridge at y −64, with one of its legs under it.
     - The lane planner plans in two passes. First, every lane that existed before is planned against the island whole (the `kept` list with the old island box), so those lanes come out as they did. Then it rebuilds its blockers from `keptOpen`, where the island is its foot plus a bridge with a bottom, and uses `groundOpen`, where the open air counts as a ravine. The low traffic on the open side is planned in that second pass, and is timed with `timed()` to be in view early.
     - Any change to what the first pass sees (roads, legs, kept boxes) re-draws every random lane after the first one it touches. That happened once in this revision (the hauler moved 4 units, the packs moved). After such a change, check the close passes (§5 check 5): their timing is set from `tMid` and survives.
+    - Once all lanes are planned, every lane whose highest point is below y −15 has its ship scaled down: 0.62 at y −20, falling 0.003 a unit to 0.42. Racers (`below: 1`) are scaled to 0.8 instead. The hauler and the close passes are never scaled. The scaling is applied after planning and after `air` (the towers cut down under lanes) in `city.js`. So clearances and cuts were made for full-size ships, and the smaller ships have more room than they need. `half` is scaled with `sc`, so the lane's record stays consistent.
+
+19. **The moon** (`W.moon` in `world.js`, `look.moon` in `build.js`).
+    - `W.moon` is the one direction toward the moon, a unit vector about 33° up, to the east (+X) and a little toward +Z. The sculptor's sun is set to it, so the bake's own shading agrees with the page's moonlight. `look.moon` carries the same direction, and the light's colour `col`, to the page.
+    - The shadows are baked. `W.moonShade()` runs after `bakeBoxes()`:
+      - it draws the candidates (the same points the cull tests, each a square of 0.6 of its radius) into a 4096² depth map seen from the moon, over radius 480 about the bend;
+      - every lit, non-emissive, non-additive splat that faces the moon (N·L > 0.02) is tested at a point pushed out along its normal and toward the moon;
+      - a splat lying more than a bias (0.35 units plus 1.5 texels) behind the map is flagged MSH (flag 64).
+    - The vertex shader adds `col × max(0, N·L)` to every lit solid splat that is not flagged, and `col × 0.3` to unlit ones.
+    - Changing the moon's direction or colour needs a full build: the direction is baked into the flags, and the colour travels in the packed meta. To try strengths on the page, use `?moonk=`.
+    - Ships, lift cars and parked ships are sculpted after the shadow pass. They neither cast nor receive moon shadows (row V).
 
 ## 3. Worked around, not solved
 
 | # | Issue | Workaround in place | Proper fix |
 | --- | --- | --- | --- |
-| A | **Frame rate on real GPUs is unmeasured.** Only a software renderer was available (9–12 s per frame there, which says nothing about hardware). Revisions 2–4 raised the load; revision 5 lowered it a little. | Solid pass is point sprites. 491–558 k points are submitted per frame at the six test poses; the bake holds 645 k. | Open with `?debug` in Chrome on the target hardware and record the fps here. If it is under 55 fps: (1) in `parts.js`, raise `WALL_PX` from 4 to 5 and the cliffs' `px: 5` to `6`, then rebuild and measure again; (2) split each tile by wall facing and skip back-facing groups per frame; (3) drop ring-2 towers beyond radius 600. |
-| B | **Visibility pass removes only 12 %** (73 k of 595 k). Streets are open in too many directions from a 70°×39° eye range for point-sampled occlusion to prove much. | Kept, since it looks safe: at two in-between poses, culled and un-culled renders differ in 0.001 % and 0.053 % of pixels. | A from-region occlusion test, or per-pose index buffers chosen at runtime. Expect roughly half the splats. |
+| A | **Frame rate on real GPUs is unmeasured.** Only a software renderer was available (9–17 s per frame there, which says nothing about hardware). Revisions 2–4 raised the load and revision 5 lowered it a little. Revision 6 raised it most, because the fisheye shows much more of the city at once. | Solid pass is point sprites. 750–785 k points are submitted per frame at the six portrait test poses, and 810–850 k in a 16:9 window. The bake holds 760 k. | Open with `?debug` in Chrome on the target hardware and record the fps here. If it is under 55 fps: (1) in `parts.js`, raise `WALL_PX` from 4 to 5 and the cliffs' `px: 5` to `6`, then rebuild and measure again; (2) split each tile by wall facing and skip back-facing groups per frame; (3) drop ring-2 towers beyond radius 600; (4) narrow the lens (`fovHMax`, `fovV` in `campath.js`). |
+| B | **Visibility pass removes only 4 %** (27 k of 660 k). Streets are open in too many directions from a 70°×39° eye range for point-sampled occlusion to prove much, and the fisheye (up to 120° across) sees round more corners than the old lens did; it used to remove 12 %. | Kept, since it is safe: at three in-between poses, culled and un-culled renders differ in 0.011–0.031 % of pixels. | A from-region occlusion test, or per-pose index buffers chosen at runtime. Expect roughly half the splats. |
 | C | **Vertical hover is lopsided**: 36° up, 3.4° down. Any lower and the eye would pass through the road deck. | Documented; arrow keys and hover both respect it. | Either raise the origin elevation and re-pin the bend, or let the orbit radius shrink as the eye drops. Rebake after. |
 | D | **The painted hauler starts beside the island wall.** With the east ravine walled in, no straight run through its painted spot was long enough behind it. | Its spot was moved 3 units east and it is allowed a 4-unit run-in, so it fades in next to the wall. All four painted ships fly. | Now that the island is open underneath, plan it in the second pass a few units lower (y ≤ −20), so it comes out from under the bridge. That moves it on the screen, so check it against the painting. |
 | E | **Ships fly straight lines and can pass through each other.** | Lanes are checked against roads, road legs, named towers, hand-placed landmarks and the eye. Grid towers are cut down under each lane, and random landmarks are not placed near one. Close passes are timed apart (9 s, 24 s, 44 s) but not checked against other ships. | Lane-to-lane time separation; banking on gentle arcs. |
@@ -170,11 +202,12 @@ Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 7
 | N | **L2 ends inside the island's foot**, so that the painting's empty right half stays empty. Its hall through the foot's west face is open, but there is nothing inside. (L1 used to end in the island too; it now runs on inside the bridge, rule 16.) | — | Carry L2 under the bridge and out across the east ravine, or give it a ramp up into the foot. |
 | Q | **White light seen through fog turns lilac.** There is no pale grey-blue step between haze 19 and white 47, so fogged white street lights in the deep city resolve to violet. | Accepted as the blue-white LED look of new districts; old districts use warm whites and ambers. | Spend a palette slot on a fogged white. |
 | R | **The third high road (H3) reads almost as a horizon line.** At that distance perspective flattens every route through it. | Lowered, and distant towers were allowed to grow taller so they break it into pieces. | Bring it nearer, or give it a visible climb (a ramp or spiral interchange). |
-
 | S | **The slit shows only from the right half of the hover range.** From the starting pose the island's east face is seen edge-on, and from the left it faces away. The face nearer the eye than z ≈ 48 is never in the picture at all. From the highest poses the slit is too foreshortened to see into. | L1 was brought into the island about 12 units nearer the bend than before, so its traffic shows along most of the stretch that can be seen (z 28–48; z 12–28 shows the lit lintel and the road curving in). | A second slit on the west face, for the left of the hover range. |
 | T | **Racers are small where they fly** (150–280 units from the eye, at the bottom of the fog). In a still picture they can be lost against the lit fog over the deep city; they read by moving. | Lights sized for the distance, a streak of hard light behind each, and less fog for them than they are really in (`fogK`). | A wider additive streak drawn in its own pass, or fewer, larger craft. |
-
 | U | **What shows under the bridge is mostly dark air.** The eye is always above the bridge, and the fog only thickens far down. So from the starting pose the hollow shows only on the left, where the shoulder was. It reads best from the raised and left poses, where the city far below shows through it. | The low traffic is put where the starting pose sees it, on the left. | Faintly lit haze at mid depth in the ravines and under the bridge, like the painting's grey void; that would change the look of every ravine, so try it on its own. |
+| V | **Ships cast no moon shadows and receive none.** The shadows are baked into the city's splats once. Ships, lift cars and parked ships are sculpted after that pass, and they move. | Ships are moonlit on the faces that turn toward the moon wherever they are, so a ship passing through a tower's shadow stays lit. Their own hull and engine lights carry them anyway. | Give the page a coarse copy of the moon's depth map (a 512² texture is enough at their size) and test ship splats against it in the vertex shader. Shadows cast by ships onto the city would need a shadow pass every frame. |
+| W | **The moon's shadow map covers radius 480 about the bend only** (0.18 units to a texel). Beyond it nothing is shaded, so every moon-facing face of the far skyline is lit, and nothing out there throws a shadow inward. | Out there the haze is thick and the faces are small, so the missing shadows do not show from the hover range. | A second, coarser map out to the far skyline (radius 800), tested only by splats the first one does not cover. |
+| X | **The moon never shows.** From every pose it sits at least 90° off the view axis, and the corner of the widest window reaches 68°, so it is always out of frame, as expected. | Its disc and halo are drawn in the sky shader, so a future camera that turns toward it will find it in place. | If it should be seen, lower its elevation or swing it toward −Z (`W.moon`), then rebuild: the shadows move with it. |
 
 Resolved in revision 3:
 - **L.** The gold patch under the fog went with the fog rework (rule 12).
@@ -193,13 +226,13 @@ Resolved in revision 3:
 
 ## 5. Checks to rerun after any change
 
-1. `node build.js` ends with `packed N splats` and no `Error`. N should stay under about 720 k. None of these lines should appear:
+1. `node build.js` ends with `packed N splats` and no `Error`. N should stay under about 800 k (760 k now). The `moon shadows:` line should report roughly half of the tested splats in shadow; far fewer means the shadow map is missing occluders, far more means its bias is too small. None of these lines should appear:
    - `(a painted ship found no clear lane …)`
    - `(a freighter pack found no clear lane …)`
    - `(a close pass found no clear lane …)`
    - `(a stream of fast ships found no clear lane …)`
 2. `node tools/shot.js dist/index.html shots/x "0,0,3;0,1,3;-1,0.3,3;1,0.5,3" 494 738` prints four `pose` lines and no `NEON_ERROR`.
-3. Compare the origin pose (`0,0,3`) with the reference. You should see:
+3. Compare the origin pose (`0,0,3`) with the reference. The fisheye shows more than the painting on every side and bows straight edges near the frame's sides; that is expected. You should see:
    - the bend near pixel (275, 258);
    - the megatower with lift cars right of it;
    - the right half empty down to haze, except for the hauler;
@@ -207,8 +240,13 @@ Resolved in revision 3:
    - the wing ship at the upper left.
 4. Corner poses show no black sprites, no holes at silhouettes and no geometry in front of the lens. The steep pose `0,1,3` shows the deep city's street grid through the fog.
 5. Run poses `0,0,9;0,0,24.5;0,0,44` at 960×540. They should show the wing ship, the two darts and the liner passing near the highway.
-6. Take two frames 0.05 s apart at one pose. They should differ in about 6 % of pixels (5.6 % at `0.25,0.3,2`), nearly all on moving traffic and ships. Change well above that, or change spread over wall faces, means shimmer is back (row H).
-7. Build un-culled with `node build.js --nocull --out dist/nocull/index.html`. At two in-between poses it should differ from the culled build in under 0.1 % of pixels.
+6. Take two frames 0.05 s apart at one pose. They should differ in about 6 % of pixels (6.1 % at `0.25,0.3,2`), nearly all on moving traffic, ships, dust and twinkling stars. Change well above that, or change spread over wall faces, means shimmer is back (row H).
+7. Build un-culled with `node build.js --nocull --out dist/nocull/index.html`. At three in-between poses (`0.25,0.3,2;-0.6,0.5,7;0.8,0.2,11`) it should differ from the culled build in under 0.1 % of pixels (0.011–0.031 % now).
 8. Pose `1,0,6` at 960×540 shows the slit as a thin lit line along the island's east face under the main highway, with coloured traffic in it.
 9. Pose `0.5,0.8,4` at 960×540 shows cyan and pink streaks (racers) over the deep city in the east ravine. `node` and `src/campath.js` can project a lane's position at time t onto the screen when you need to find one.
-10. Pose `-1,0.3,15` at 1280×720 with `?art=720` shows the bridge standing over open air, L1 crossing to it, and the convoy in the west ravine below L1. Pose `-0.8,0.6,15` also shows the city far below through the opening.
+10. Pose `-1,0.3,15` at 1280×720 with `?art=720` shows the bridge standing over open air, L1 crossing to it, and the convoy in the west ravine below L1. Pose `-0.8,0.6,15` also shows the city far below through the opening. The low ships there should look clearly smaller than ships at road height.
+11. `QS=moondbg node tools/shot.js dist/index.html shots/md "0,0,6;0,0.9,6" 960 540` shows the moon's light and shadow. Faces it lights are drawn teal and faces in shadow crimson. You should see:
+    - crimson on the highway deck west of the megatower, and on the ravine floors under the east bank;
+    - teal on tower tops and east faces;
+    - no crimson speckle scattered over teal faces (shadow acne) and no teal islands in the middle of a shadow (light leaking).
+12. The sky shows stars above the skyline, fading out toward the horizon, and none in front of anything.

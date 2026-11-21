@@ -581,6 +581,16 @@ module.exports = function buildCity(W) {
   });
   meta.ships = lanes.concat(lifts, parked);
   const air = lanes.filter(l => !l.below).map(l => ({ path: U.makePath([l.a, l.b], { step: 1.5 }), hw: l.half * 2.2 + 2.4, drop: l.half + 2.4 }));
+  /* the ships down between this city and the one below are made smaller the deeper they fly, so the abyss reads deeper than it is
+     (after the lanes have cut the towers: the city stays as it was). Not the painted hauler, not the fast ones' lights (those are
+     sized to be seen from far off; they only lose a little) */
+  for (const l of lanes) {
+    const y = Math.max(l.a[1], l.b[1]);
+    if (y > -15 || l.tpl === 'hauler' || l.close) continue;
+    const k = l.below ? 0.8 : clamp(0.62 - (-y - 20) * 0.003, 0.42, 0.62);
+    l.sc = +(l.sc * k).toFixed(3);
+    l.half = +(l.half * k).toFixed(3);
+  }
   const stats = { towers: 0, cut: 0, landmarks: 0, floor: 0, signs: 0, street: 0 };
   const LANDMARK = ['twist', 'stack', 'gate', 'terrace', 'needle', 'twin', 'dock', 'diagrid', 'crown', 'twist', 'terrace', 'twin', 'stack', 'needle'],
     dockPark = [];
