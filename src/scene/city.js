@@ -76,7 +76,7 @@ module.exports = function buildCity(W) {
       way: [
         [-190, -26, -10],
         [-45, -26, 10],
-        [-1, -26, 18]
+        [-8, -26, 0] // (it runs into the island's foot by the bend, which still stands all the way down, and stops there)
       ],
       rad: 40,
       lanes: [
@@ -199,6 +199,11 @@ module.exports = function buildCity(W) {
       [-40, -14.5, -6, 112] // west
     ],
     ISLAND = [-14.5, 2.6, -6.5, 112],
+    // past its foot by the bend the island is a bridge: the near highway, and the storeys under it that L1 runs through (behind the
+    // slit), and below them nothing, as in the painting, where the abyss shows under the highway. HOLLOW is the open air under it
+    HOLLOW_Z = 12,
+    BRIDGE_BOT = -16,
+    HOLLOW = [-14.5, 2.6, HOLLOW_Z, 112],
     inRect = (x, z, r, m) => x > r[0] - m && x < r[1] + m && z > r[2] - m && z < r[3] + m,
     inRavine = (x, z, m) => RV.some(r => inRect(x, z, r, m)) || (z < -6 + m && z > -125 - m && x > hwx(z) - 48 - m && x < hwx(z) + 7 + m),
     bankTop = (x, z) => -5 - 9 * vn(x, z, 50, 21);
@@ -269,7 +274,8 @@ module.exports = function buildCity(W) {
   lower.forEach((L, li) => {
     const P = L.path;
     PT.deck(W, P, { s0: 0, s1: P.len, wl: L.hw, wr: L.hw, y0: -0.5, y1: 0, mat: plain(RAMP.road), what: 'lower' });
-    PT.piers(W, P, { s0: 9, s1: P.len, gap: L.gap, w: 1.2, d: 1.2, y: -0.5, out: legs });
+    const legEnd = L.name === 'L1' ? P.cum[P.pts.findIndex(p => p[0] > -17)] : P.len; // (L1 is carried by the island from there on)
+    PT.piers(W, P, { s0: 9, s1: legEnd, gap: L.gap, w: 1.2, d: 1.2, y: -0.5, out: legs });
     L.lanes.forEach((l, i) =>
       PT.trail(W, P, {
         s0: 0,
@@ -344,7 +350,7 @@ module.exports = function buildCity(W) {
   /* its east face. Where the lower road L1 runs on inside the island toward the eye, the face's upper storeys stand on a slit: a thin
      window line along the face, through which the road's traffic is seen going by. (L1 is kept out of this cliff's roads, so it is not
      given halls here: the slit is the road's room.) */
-  const SLIT = { z0: 16, z1: 120, floor: -11.5, top: -10.1 },
+  const SLIT = { z0: HOLLOW_Z, z1: 120, floor: -11.5, top: -10.1 },
     L1road = roads.find(r => r.path === lower[0].path),
     eastBays = PT.cliff(W, {
       a: [2.6, 2.5],
@@ -352,6 +358,7 @@ module.exports = function buildCity(W) {
       out: [1, 0],
       back: 3.2,
       top: (x, z) => (z > SLIT.z0 && z < SLIT.z1 ? SLIT.floor : -1.75),
+      bottom: (x, z) => (z > HOLLOW_Z ? BRIDGE_BOT : W.FOG_CUT),
       seed: 11,
       roads: lowerRoads.filter(r => r !== L1road),
       kept,
@@ -393,11 +400,11 @@ module.exports = function buildCity(W) {
     for (let u = -b.w / 2 + sp / 2; u < b.w / 2; u += sp)
       W.lamp(gl, 2.45, SLIT.top - 0.08, b.z + u, Math.min(0.06, sp * 0.18), h4(b.i, Math.round(u * 4), 62, 1) < 0.85 ? 46 : 26, { kind: K.TWINKLE, sp: 0.6, ph: u * 0.7, big: true });
   });
-  PT.cliff(W, { a: [-5, 112], b: [-5, -6.5], out: [-1, 0], back: 4.4, top: -1.75, bottom: -24, seed: 12, roads: lowerRoads, step: 1.2, ports: 0, bay: [9, 16], what: 'island' });
+  PT.cliff(W, { a: [-5, 112], b: [-5, -6.5], out: [-1, 0], back: 4.4, top: -1.75, bottom: (x, z) => (z > HOLLOW_Z ? BRIDGE_BOT : -24), seed: 12, roads: lowerRoads, step: 1.2, ports: 0, bay: [9, 16], what: 'island' });
   PT.tower(W, { x: 0.85, z: -2, w: 2.9, d: 9, top: -1.75, noWin: true, ramp: RAMP.cliff, what: 'island' });
-  const courtAt = (z, i) => i % 3 === 1 && z > 14 && z < 64,
+  const courtAt = (z, i) => i === 0, // (one court left, on the foot's bay at the edge of the open air)
     shoulder = PT.cliff(W, {
-      a: [-14.5, 112],
+      a: [-14.5, HOLLOW_Z], // (past HOLLOW_Z there is no shoulder: the bridge stands over the open abyss, and L1 comes to it over the air)
       b: [-14.5, -6.5],
       out: [-1, 0],
       back: 9.6,
@@ -427,6 +434,7 @@ module.exports = function buildCity(W) {
   });
   PT.cliff(W, { a: [-14.5, -6.5], b: [2.3, -6.5], out: [0, -1], back: 4, top: -8, seed: 14, roads: lowerRoads, kept, near: true, step: 2.4, ports: 0.25, bay: [5, 8], what: 'island', portsOut: ports });
   keep(-14.5, 2.6, -6.5, 112, -1);
+  const islandKeep = kept[kept.length - 1];
 
   // ---- the banks of the ravines ----
   const bank = (a, b, out, seed, o) => PT.cliff(W, Object.assign({ a, b, out, back: 10, top: bankTop, seed, roads, kept, tile: 64, what: 'bank' }, o || {}));
@@ -555,7 +563,22 @@ module.exports = function buildCity(W) {
     });
 
   /* ------------------------------------------------------------------ the rest of the city ------------------------------------------------------------------ */
-  const lanes = planLanes(W, { roads: roads.concat(pipeRuns), piers: legs, kept, ground: (x, z) => (inRavine(x, z, 0) ? -1e9 : 12), seed: 4242, debug: !!process.env.LANES });
+  // (the lanes planned before the island was opened underneath are planned as they were, against the whole island; then the open air
+  // under the bridge is let in, and the low traffic on that side is planned through it)
+  const keptOpen = kept.filter(b => b !== islandKeep).concat([
+    [-14.5, 2.6, -6.5, HOLLOW_Z + 1, -1], // the island's foot by the bend, all the way down
+    [-7.4, 5, HOLLOW_Z - 1, 112, -1, BRIDGE_BOT] // the bridge
+  ]);
+  const lanes = planLanes(W, {
+    roads: roads.concat(pipeRuns),
+    piers: legs,
+    kept,
+    ground: (x, z) => (inRavine(x, z, 0) ? -1e9 : 12),
+    keptOpen,
+    groundOpen: (x, z) => (inRavine(x, z, 0) || inRect(x, z, HOLLOW, 0) ? -1e9 : 12),
+    seed: 4242,
+    debug: !!process.env.LANES
+  });
   meta.ships = lanes.concat(lifts, parked);
   const air = lanes.filter(l => !l.below).map(l => ({ path: U.makePath([l.a, l.b], { step: 1.5 }), hw: l.half * 2.2 + 2.4, drop: l.half + 2.4 }));
   const stats = { towers: 0, cut: 0, landmarks: 0, floor: 0, signs: 0, street: 0 };
@@ -872,7 +895,7 @@ module.exports = function buildCity(W) {
       z = R.range(-130, 112),
       y = R.range(-178, -142),
       sz = R.range(8, 18);
-    if (!inRavine(x, z, -sz * 0.3)) continue;
+    if (!inRavine(x, z, -sz * 0.3) && !inRect(x, z, HOLLOW, -sz * 0.3)) continue;
     W.glow(W.tile(x, z, 1, 96, 'fog'), x, y, z, sz, R.pick([16, 17, 17, 18]), R.range(0.05, 0.1), {
       kind: K.PUFF,
       ph: R.range(0, 6.28),
@@ -888,7 +911,7 @@ module.exports = function buildCity(W) {
       z = R.range(-130, 112),
       y = R.range(-128, -96),
       sz = R.range(7, 16);
-    if (!inRavine(x, z, -sz * 0.4)) continue;
+    if (!inRavine(x, z, -sz * 0.4) && !inRect(x, z, HOLLOW, -sz * 0.4)) continue;
     W.glow(W.tile(x, z, 1, 96, 'fog'), x, y, z, sz, R.pick([16, 17, 17, 18]), R.range(0.045, 0.085), {
       kind: K.PUFF,
       ph: R.range(0, 6.28),

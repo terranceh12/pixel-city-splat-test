@@ -435,7 +435,7 @@ function cliff(W, o) {
     t = [dx / L, dz / L],
     out = o.out,
     yaw = Math.atan2(t[0], t[1]),
-    bottom = o.bottom === undefined ? W.FOG_CUT : o.bottom,
+    bottom = o.bottom === undefined || typeof o.bottom === 'function' ? W.FOG_CUT : o.bottom,
     stepMax = o.step === undefined ? 3.4 : o.step,
     ramps = o.ramps || [M.RAMP.cliff, M.RAMP.cliff, M.RAMP.plumD, M.RAMP.cliffS, M.RAMP.mega, M.RAMP.slateD],
     styles = ['dark', 'sparse', 'sparse', 'resid', 'resid', 'columns', 'office', 'bands'],
@@ -449,17 +449,18 @@ function cliff(W, o) {
       mx = o.a[0] + t[0] * sm,
       mz = o.a[1] + t[1] * sm,
       top = typeof o.top === 'function' ? o.top(mx, mz, i) : o.top,
+      bot = typeof o.bottom === 'function' ? o.bottom(mx, mz, i, top) : bottom, // (a bay may end in mid air)
       ramp = R.pick(ramps),
       win = R.pick([M.WIN.warm, M.WIN.warm, M.WIN.pale, M.WIN.gold, M.WIN.dim, M.WIN.cool]),
       tile = o.tile || 48;
-    bays.push({ x: mx, z: mz, w, top, s0: s, s1: s + w, i });
+    bays.push({ x: mx, z: mz, w, top, bot, s0: s, s1: s + w, i });
     let y = top,
       p = R.range(0, stepMax * 0.4),
       j = 0,
       pmax = p;
-    while (y > bottom + 0.5) {
-      const h = Math.min(y - bottom, j === 0 ? R.range(5, 11) : y > -70 ? R.range(11, 21) : R.range(22, 34)),
-        y0 = y - h < bottom + 4 ? bottom : y - h,
+    while (y > bot + 0.5) {
+      const h = Math.min(y - bot, j === 0 ? R.range(5, 11) : y > -70 ? R.range(11, 21) : R.range(22, 34)),
+        y0 = y - h < bot + 4 ? bot : y - h,
         port = j > 0 && y < -9 && y > -118 && h > 9 && w > 6.5 && R.chance(o.ports === undefined ? 0.13 : o.ports),
         cell = (yt, yb, pp, extra) => {
           if (yt - yb < 0.4) return;
@@ -555,7 +556,7 @@ function cliff(W, o) {
         zs = [];
       for (const u of [-w / 2, w / 2])
         for (const q of [-o.back, pmax + 1]) (xs.push(mx + t[0] * u + out[0] * q), zs.push(mz + t[1] * u + out[1] * q));
-      o.kept.push([Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs), top]);
+      o.kept.push([Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs), top, bot]);
     }
     s += w;
     i++;

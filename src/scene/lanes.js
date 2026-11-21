@@ -26,17 +26,25 @@ function planLanes(W, o) {
         c.push([lo, hi]);
       }
   };
-  // a road: its deck, with room over and under it; its legs, all the way down; a named tower, from its top down
-  for (const rd of o.roads)
-    for (let i = 0; i < rd.path.pts.length; i += 2) {
-      const p = rd.path.pts[i];
-      mark(p[0], p[2], rd.hw + 0.6, Math.round(p[1]) - 3.2, Math.round(p[1]) + 3);
-    }
-  // (legs and what is kept stand down to the city's floor, FOG_CUT; under it the air is open, and the fast traffic flies there)
+  // a road: its deck, with room over and under it; its legs, all the way down; a named tower, from its top down.
+  // (Legs and what is kept stand down to the city's floor, FOG_CUT; under it the air is open, and the fast traffic flies there. What
+  // is kept may say where it ends, [x0, x1, z0, z1, top, bottom]: the bottom counts only once the open air is let in, below.)
   const FLOOR = W.FOG_CUT;
-  for (const p of o.piers) mark(p[0], p[1], p[3] + 0.8, FLOOR - 2, p[2]);
-  for (const b of o.kept)
-    for (let x = b[0]; x <= b[1] + 1; x += CELL) for (let z = b[2]; z <= b[3] + 1; z += CELL) mark(x, z, 0.5, FLOOR - 2, b[4] + 3);
+  function build(kept, open) {
+    cells.fill(undefined);
+    for (const rd of o.roads)
+      for (let i = 0; i < rd.path.pts.length; i += 2) {
+        const p = rd.path.pts[i];
+        mark(p[0], p[2], rd.hw + 0.6, Math.round(p[1]) - 3.2, Math.round(p[1]) + 3);
+      }
+    for (const p of o.piers) mark(p[0], p[1], p[3] + 0.8, FLOOR - 2, p[2]);
+    for (const b of kept) {
+      const lo = open && b[5] !== undefined && b[5] > FLOOR + 1 ? b[5] - 2 : FLOOR - 2;
+      for (let x = b[0]; x <= b[1] + 1; x += CELL) for (let z = b[2]; z <= b[3] + 1; z += CELL) mark(x, z, 0.5, lo, b[4] + 3);
+    }
+  }
+  build(o.kept, false);
+  let ground = o.ground;
   const blocked = (x, z, lo, hi) => {
     const a = Math.floor((x - X0) / CELL),
       b = Math.floor((z - Z0) / CELL);
@@ -85,7 +93,7 @@ function planLanes(W, o) {
         const w = (side * j) / ns;
         if (blocked(x + ux * w, z + uz * w, y - k.half * sc, y + k.half * sc) || blocked(x - ux * w, z - uz * w, y - k.half * sc, y + k.half * sc)) return false;
       }
-      if (o.ground && y + k.half * sc > FLOOR && y - k.half * sc < o.ground(x, z)) return false; // (over the city proper a ship keeps above the roofs, or goes under its floor)
+      if (ground && y + k.half * sc > FLOOR && y - k.half * sc < ground(x, z)) return false; // (over the city proper a ship keeps above the roofs, or goes under its floor)
       if (U.nearestEye(x, y, z) < k.eye * sc) {
         if (why) why.push('eye ' + U.nearestEye(x, y, z).toFixed(1) + ' at ' + [x, y, z].map(v => v.toFixed(1)));
         return false;
@@ -329,7 +337,7 @@ function planLanes(W, o) {
       sc = q.sc || 1;
     const ok = (x, y, z, ux, uz) => {
       if (U.eyePatchDist(x, y, z) < q.least) return false;
-      if (o.ground && y - k.half * sc < Math.min(2, o.ground(x, z))) return false;
+      if (ground && y - k.half * sc < Math.min(2, ground(x, z))) return false;
       const lo = y - k.half * sc,
         hi = y + k.half * sc,
         side = k.wide * sc + 0.7;
@@ -435,6 +443,50 @@ function planLanes(W, o) {
     stream(['racer', 'racer-p', 'racer', 'racer'], 4, { x: [-16, 0], y: [FLOOR - 8, FLOOR - 6], z: [-34, -18], head: PI / 2, fan: 0.12, before: 170, after: 160, sp: 30, gap: 3, sc: 2.8 })
   ];
   if (fast.indexOf(false) >= 0) console.log('  (a stream of fast ships found no clear lane: ' + fast.join(' ') + ')');
+
+  /* the low traffic on the island's open side. Past its foot by the bend the island is a bridge standing on nothing, its shoulder
+     gone: ships go under it, and down the west ravine to it, between this city and the one below. Planned last, against the island
+     as it now is (the lanes above were planned against it whole, and are kept as they were) */
+  if (o.keptOpen) {
+    build(o.keptOpen, true);
+    ground = o.groundOpen;
+    // (each is timed to be on its way, in view, in the first half minute after the page opens: `f` of its run done at `T` seconds)
+    const timed = (made, f, T) => {
+      const from = lanes.length;
+      return (...args) => {
+        const ok = made(...args);
+        for (let i = from; i < lanes.length; i++) {
+          const l = lanes[i],
+            run = Math.hypot(l.b[0] - l.a[0], l.b[1] - l.a[1], l.b[2] - l.a[2]) / l.sp,
+            cycle = run + l.gap;
+          l.u0 = +(((((f * run - T) / cycle) % 1) + 1) % 1).toFixed(4);
+        }
+        return ok;
+      };
+    };
+    const low = [];
+    // down the west ravine, where the eye sees it from the start (left of the bridge, below the lower roads): a slow string of
+    // freighters coming toward the eye, a liner going away, a dart higher up between the two lower roads
+    low.push(
+      timed(pack, 0.35, 12)(
+        [
+          { kind: 'freighter', off: [0, 0, 0] },
+          { kind: 'tug', off: [3.6, 1.4, -8], sc: 0.9 },
+          { kind: 'tug', off: [-3.4, -1, 10], sc: 0.9 }
+        ],
+        { x: [-36, -28], y: [-42, -36], z: [-20, 30], head: 0.04, fan: 0.06, len: 120 }
+      )
+    );
+    low.push(timed(add, 0.3, 25)('liner', { x: [-37, -27], y: [-48, -38], z: [-20, 20], head: PI, fan: 0.1, before: 60, after: 90 }));
+    low.push(timed(add, 0.4, 8)('dart', { x: [-34, -24], y: [-21, -17], z: [-10, 30], head: 0.1, fan: 0.1, before: 80, after: 50 }));
+    // across under the bridge, just past its foot: out of the west ravine into the east one, and back the other way
+    low.push(timed(add, 0.3, 20)('liner', { x: [-13, -6], y: [-34, -26], z: [16, 28], head: PI / 2 + 0.2, fan: 0.25, before: 70, after: 95 }));
+    low.push(timed(add, 0.55, 35)('dart', { x: [-13, -6], y: [-30, -22], z: [24, 40], head: -PI / 2 - 0.15, fan: 0.25, before: 80, after: 22 }));
+    low.push(timed(add, 0.3, 25)('tug', { x: [-13, -6], y: [-62, -52], z: [18, 36], head: PI / 2 - 0.3, fan: 0.25, before: 80, after: 90 }));
+    // and fast ones far down the west ravine
+    low.push(stream(['racer-p', 'racer', 'racer'], 3, { x: [-33, -27], y: [-138, -124], z: [-10, 20], head: 0.03, fan: 0.03, before: 70, after: 88, sp: 24, gap: 5, sc: 2.4 }));
+    if (low.indexOf(false) >= 0) console.log('  (a low ship on the open side found no clear lane: ' + low.join(' ') + ')');
+  }
   return lanes;
 }
 module.exports = { planLanes };

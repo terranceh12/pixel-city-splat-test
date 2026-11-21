@@ -5,7 +5,17 @@ what was worked around instead of solved, and how to check each next step.
 
 ## 1. What exists
 
-One self-contained page (`dist/index.html`, 2.54 MB) built by `node build.js` from the ink-studio toolkit.
+One self-contained page (`dist/index.html`, 2.43 MB) built by `node build.js` from the ink-studio toolkit.
+
+**Revision 5 (the island opened underneath, low traffic on its open side).**
+- As in the painting, the abyss now shows under the near highway. Past its foot by the bend (z > 12) the island is a bridge: the highway, and the storeys under it that L1 runs through behind the slit, down to y −16. Below that there is nothing, down to the city far below.
+- The island's lower shoulder on the west side is gone there too, so the left side opens. One sunk court is left, on the foot. L1 now crosses open air to the bridge's west face, with no legs past x −17.
+- L2, which used to end inside the island where it is now open, ends inside the foot instead.
+- Ships fly on the open side, between this city and the one below:
+  - down the west ravine: a convoy (a freighter and two tugs) coming toward the eye, a liner going away, and a dart higher up between the two lower roads;
+  - three more (a liner, a dart and a tug) crossing under the bridge from one ravine to the other;
+  - three racers deep in the west ravine.
+- Each is timed to be on its way, in view, in the first half minute after the page opens.
 
 **Revision 4 (slit window, fast traffic, smaller lifts).**
 - The lower highway L1 no longer stops inside the island. It enters a little nearer the bend than before, turns toward the eye inside the island and runs on behind its east face, to z 110. Its upper storeys stand on a slit: a thin window line through which the road's traffic shows. The slit has a run of small lamps along its lintel, so it reads as a lit line even where the road is out of sight.
@@ -20,7 +30,7 @@ One self-contained page (`dist/index.html`, 2.54 MB) built by `node build.js` fr
 - There are 114 landmark towers in nine shapes, each built to do something: twist, stack, gate, terrace, needle, twin, dock, diagrid and crown. Twelve are placed by hand where the painting's distant skyline shows.
 - Four ships pass close to the camera on a loop: a wing ship at about 9 s, two darts at about 24 s and a liner at about 44 s.
 - The small revision-2 follow-ups are done (the hand-off list has been removed):
-  - 15 ships are parked on courts, in ports and on dock landmarks;
+  - 15 ships are parked: in ports, on dock landmarks, and (since revision 5) on the one court left on the island's foot;
   - there is a second freighter livery and a seventh pack;
   - lift cars stop at three floors;
   - cut-through halls have ceilings.
@@ -37,20 +47,20 @@ One self-contained page (`dist/index.html`, 2.54 MB) built by `node build.js` fr
 | --- | --- | --- |
 | Sculpt | `src/scene/city.js`, `parts.js`, `ships.js` | Every solid is a signed-distance box, ball or lathe handed to the toolkit's sculptor (`makeSculpt`, `K.sculpt`). That covers roads, towers, cliffs (`PT.cliff`), cut-through towers (`PT.towerCut`), landmarks (`PT.landmark`), the megatower, 9 ship kinds (16 templates, counting near, parked, livery and colour variants) and the lift car. Pipes are laid by hand as rings of discs (`W.pipe`). The deep city is laid by hand as light strokes (`deepCity()`). |
 | Bake | toolkit `S.bake()` behind `src/bake/ir.js` | The sculptor projects sample points onto the SDF surface, lights them and emits splats. A recorder in front of the builder keeps the axis, two sigmas, palette index, motion kind and flags of each splat. |
-| Cull | `src/scene/pvs.js` | Before baking, candidate sample points are tested from 2,840 eye positions on the hover range. This removes 13 % (86 k of 679 k). |
-| Pack | `src/bake/ir.js` `pack()` | 16-bit positions per group, delta-coded, gzip. 705,357 splats pack to 1.61 MB. |
+| Cull | `src/scene/pvs.js` | Before baking, candidate sample points are tested from 2,840 eye positions on the hover range. This removes 12 % (73 k of 595 k). |
+| Pack | `src/bake/ir.js` `pack()` | 16-bit positions per group, delta-coded, gzip. 645,216 splats pack to 1.53 MB. |
 | Draw | `src/host/main.js`, `shaders.js` | WebGL2. Solid splats are depth-tested point sprites cut at half strength. Glows are additive instanced quads. The scene is drawn at 2× art resolution, resolved by the toolkit's own `PixelLook.glsl`, then blown up in whole pixels. A 128² floor-light texture, recomputed each frame, tints the fog and lights walls from below. |
 
 Numbers from the last build:
-- 2,039 grid plots: 1,894 plain towers, 43 built round a road and 102 landmarks;
+- 2,039 grid plots: 1,887 plain towers, 43 built round a road and 109 landmarks;
 - 12 hand-placed landmarks and 9 named towers;
 - 5 lower highways, 3 high roads and 6 pipes;
-- 49 ship lanes (19 ships fly in 7 packs; 4 are close passes; 13 are racers in 3 streams);
+- 62 ship lanes (22 ships fly in 8 packs; 4 are close passes; 16 are racers in 4 streams);
 - 10 lift cars and 15 parked ships;
 - 379 fog-floor lights, 1,388 street lights and 90 signs;
 - 4,419 deep-city lights.
 
-Bake time is 45 s, most of it the visibility pass.
+Bake time is 41 s, most of it the visibility pass.
 
 Rebuild with `node build.js`. The toolkit checkout is expected at `../siliconjungle/shapeshift-labs-ink-studio`; otherwise pass `--toolkit <path>`.
 
@@ -101,7 +111,7 @@ Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 7
      | 47 | Cool white |
 6. **Solid splats must stay small on screen.** They are point sprites, and the scene target has an 8-art-pixel border so sprites are not dropped at the frame edge. Anything large and soft belongs in the additive pass.
 7. **Every recorded splat needs a unit axis.** The sculptor returns a zero normal in creases where two solids meet. `ir.js` replaces it with +Y and the vertex shader guards it. Removing either guard brings back full-screen black sprites.
-8. **The lie of the land is one set of rectangles** at the top of `city.js` (`RV`, `ISLAND`, `inRavine`, `hwx`). Grid towers, street lights, the lane planner's `ground` rule and the deep city all ask `inRavine`. If you move a ravine there, move every bank (`bank(...)` call) that borders it.
+8. **The lie of the land is one set of rectangles** at the top of `city.js` (`RV`, `ISLAND`, `inRavine`, `hwx`). Grid towers, street lights, the lane planner's `ground` rule and the deep city all ask `inRavine`. If you move a ravine there, move every bank (`bank(...)` call) that borders it. The open air under the island's bridge (`HOLLOW`, from `HOLLOW_Z`) is not a ravine as far as `inRavine` is concerned; only the fog and the low traffic's ground rule (rule 18) treat it as one.
 9. **Ships below y = 12 stay inside ravines** (`lanes.js`, the `ground` option), unless they fly wholly under the city's floor (`W.FOG_CUT`, −170). Every cliff bay is a keep-out box. Legs and keep-out boxes block only down to the floor, so the air under it is open. A lane that cannot be flown is skipped with a console line, never forced.
 10. **Roads are passed to cliffs and towers** (`roads`, `lowerRoads`). A hall is left open wherever a road's centre line enters a footprint. A new road must be added to `roads` before the cliffs and the grid are built. The high roads are, and the tower at (44, −140) is built round H3 by `heroCut`. The one exception is L1 inside the island's east cliff (rule 16): it is left out of that cliff's roads, because the slit is its room.
 11. **Lift cars and parked ships are `meta.ships` entries without a lane.**
@@ -127,7 +137,7 @@ Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 7
     - Close ships use their own finer templates with smaller halos (`'wing-near'`, `'dart-near'`, `'liner-near'`, `haloK`).
 
 16. **The slit in the island's east face** (`SLIT` in `city.js`).
-    - The east cliff's bays whose middles lie in z 16…120 stop at the slit's floor (y −11.5). The storeys above (y −10.1 up to the road deck) are built separately, flush with the face line, with their underside drawn (`under: true`).
+    - The east cliff's bays whose middles lie past `HOLLOW_Z` (z 12) stop at the slit's floor (y −11.5). The storeys above (y −10.1 up to the road deck) are built separately, flush with the face line, with their underside drawn (`under: true`).
     - Nothing may stand out over the slit, or it hides the road from above. L1's outer lanes run 0.1 inside the face so they show through it.
     - Moving L1 means moving `SLIT` with it.
 17. **The fast streams** (`lanes.js stream()`).
@@ -135,28 +145,36 @@ Headless check: `node tools/shot.js dist/index.html shots/x "0,0,3;1,1,60" 494 7
     - Racers carry their lights through the fog in two ways. Their templates are built with `nofog`, which sets `W.orFlags` so that every lamp and glow gets the NOFOG flag (the shader now honours NOFOG on additive glows too). Their lanes also carry `fogK: 0.4`, which the page passes as `u_gfog` to scale the fog's optical depth for that ship.
     - They never come nearer the eye than about 150 units, so their lights are sized for that.
 
+18. **The bridge** (`HOLLOW_Z`, `BRIDGE_BOT`, `HOLLOW` in `city.js`).
+    - A cliff's `bottom` may be a function of the bay (`PT.cliff`), so a bay can end in mid air. Past `HOLLOW_Z` the island's east cliff and west wall end at `BRIDGE_BOT` (y −16), and its shoulder is not built at all. Before `HOLLOW_Z` (the foot, by the bend) everything still stands all the way down: L2 ends in it, the pipelines start from it, and its court is there.
+    - Nothing may be built under the bridge. L1's legs stop at x −17. L4 passes under the bridge at y −64, with one of its legs under it.
+    - The lane planner plans in two passes. First, every lane that existed before is planned against the island whole (the `kept` list with the old island box), so those lanes come out as they did. Then it rebuilds its blockers from `keptOpen`, where the island is its foot plus a bridge with a bottom, and uses `groundOpen`, where the open air counts as a ravine. The low traffic on the open side is planned in that second pass, and is timed with `timed()` to be in view early.
+    - Any change to what the first pass sees (roads, legs, kept boxes) re-draws every random lane after the first one it touches. That happened once in this revision (the hauler moved 4 units, the packs moved). After such a change, check the close passes (§5 check 5): their timing is set from `tMid` and survives.
+
 ## 3. Worked around, not solved
 
 | # | Issue | Workaround in place | Proper fix |
 | --- | --- | --- | --- |
-| A | **Frame rate on real GPUs is unmeasured.** Only a software renderer was available (9–12 s per frame there, which says nothing about hardware). Revisions 2–4 raised the load. | Solid pass is point sprites. 548–604 k points are submitted per frame at the six test poses; the bake holds 705 k. | Open with `?debug` in Chrome on the target hardware and record the fps here. If it is under 55 fps: (1) in `parts.js`, raise `WALL_PX` from 4 to 5 and the cliffs' `px: 5` to `6`, then rebuild and measure again; (2) split each tile by wall facing and skip back-facing groups per frame; (3) drop ring-2 towers beyond radius 600. |
-| B | **Visibility pass removes only 13 %** (86 k of 679 k). Streets are open in too many directions from a 70°×39° eye range for point-sampled occlusion to prove much. | Kept, since it looks safe: at two in-between poses, culled and un-culled renders differ in 0.004 % and 0.063 % of pixels. | A from-region occlusion test, or per-pose index buffers chosen at runtime. Expect roughly half the splats. |
+| A | **Frame rate on real GPUs is unmeasured.** Only a software renderer was available (9–12 s per frame there, which says nothing about hardware). Revisions 2–4 raised the load; revision 5 lowered it a little. | Solid pass is point sprites. 491–558 k points are submitted per frame at the six test poses; the bake holds 645 k. | Open with `?debug` in Chrome on the target hardware and record the fps here. If it is under 55 fps: (1) in `parts.js`, raise `WALL_PX` from 4 to 5 and the cliffs' `px: 5` to `6`, then rebuild and measure again; (2) split each tile by wall facing and skip back-facing groups per frame; (3) drop ring-2 towers beyond radius 600. |
+| B | **Visibility pass removes only 12 %** (73 k of 595 k). Streets are open in too many directions from a 70°×39° eye range for point-sampled occlusion to prove much. | Kept, since it looks safe: at two in-between poses, culled and un-culled renders differ in 0.001 % and 0.053 % of pixels. | A from-region occlusion test, or per-pose index buffers chosen at runtime. Expect roughly half the splats. |
 | C | **Vertical hover is lopsided**: 36° up, 3.4° down. Any lower and the eye would pass through the road deck. | Documented; arrow keys and hover both respect it. | Either raise the origin elevation and re-pin the bend, or let the orbit radius shrink as the eye drops. Rebake after. |
-| D | **The painted hauler starts beside the island wall.** With the east ravine walled in, no straight run through its painted spot was long enough behind it. | Its spot was moved 3 units east and it is allowed a 4-unit run-in, so it fades in next to the wall. All four painted ships fly. | Curved lanes, or a port in the wall for it to come out of. |
+| D | **The painted hauler starts beside the island wall.** With the east ravine walled in, no straight run through its painted spot was long enough behind it. | Its spot was moved 3 units east and it is allowed a 4-unit run-in, so it fades in next to the wall. All four painted ships fly. | Now that the island is open underneath, plan it in the second pass a few units lower (y ≤ −20), so it comes out from under the bridge. That moves it on the screen, so check it against the painting. |
 | E | **Ships fly straight lines and can pass through each other.** | Lanes are checked against roads, road legs, named towers, hand-placed landmarks and the eye. Grid towers are cut down under each lane, and random landmarks are not placed near one. Close passes are timed apart (9 s, 24 s, 44 s) but not checked against other ships. | Lane-to-lane time separation; banking on gentle arcs. |
 | F | **Reference matching is by eye.** Megatower, highway, bend, named towers, the hauler, the wing ship, the pipeline bundle, the three ravines and the 12 hand-placed landmarks are placed by unprojecting reference pixels. Bank lines are straight and the cliff bays are seeded, not traced. | — | Unproject more reference pixels with `CamPath.refToDepth` and add them as `hero({...})` entries in `city.js`. |
 | G | **Windows are not baked by the sculptor's material.** With windows as a material texture every wall needed 2-pixel splats (1.2 M wall splats). | Walls are sculpted coarse and dark; each lit window is its own emissive splat laid over the wall and culled with it. | None needed unless inked detail (`S.fine`) is wanted. |
-| H | **Light shimmer.** Lamps tinting dark walls land between close palette steps, so smooth light motion made whole faces flicker. | Lamps and fog-floor lights step six times a second. Dither amplitude is 0.014 on solids and 1.5× that on bare haze. Now 22 % of pixels change in 0.6 s and 5.7 % in 0.05 s. Nearly all of the 0.05 s change is moving traffic, ships and drifting dust (rainbow cars change more pixels than one amber colour did). No wall face flickers. | A dedicated lit ramp per wall ramp, so lamp light moves whole palette steps. |
+| H | **Light shimmer.** Lamps tinting dark walls land between close palette steps, so smooth light motion made whole faces flicker. | Lamps and fog-floor lights step six times a second. Dither amplitude is 0.014 on solids and 1.5× that on bare haze. Now 23 % of pixels change in 0.6 s and 5.8 % in 0.05 s. Nearly all of the 0.05 s change is moving traffic, ships and drifting dust (rainbow cars change more pixels than one amber colour did). No wall face flickers. | A dedicated lit ramp per wall ramp, so lamp light moves whole palette steps. |
 | I | **Soft glows band into rings** after palette quantisation (sign halos, the light well at the megatower's foot). | Glow strengths lowered; haze banks and deep fog wisps kept faint. | Blue-noise dither for the additive pass only. |
 | J | **Inked silhouettes against lit haze looked like cracks.** | Lit haze writes itself as "something there", so only silhouettes against the black void are inked. | — |
 | K | **No fallback** without WebGL2 or `DecompressionStream` (Safari before 16.4, Firefox before 113). | The page prints a one-line message. | Ship the pack uncompressed behind a size check, or include a small inflate routine. |
 | M | **The near city has no ground.** Banks are cliffs 8–10 units thick, and behind them towers stand in fog. | The deep city at y −186 now gives the abyss a lit floor. Street lights sit at one "street level" (`bankTop - 3…10`). From the highest poses, the gaps between near towers still show fog, not streets. | A coarse ground slab per tile behind the banks. |
-| N | **L2 ends inside the island**, so that the painting's empty right half stays empty. Its hall through the shoulder is open, with a ceiling, but there is nothing inside. (L1 used to end there too; it now runs on inside the island, rule 16.) | — | Run L2 on inside the island too, behind a second slit lower down the east face, or bend it along the island. |
+| N | **L2 ends inside the island's foot**, so that the painting's empty right half stays empty. Its hall through the foot's west face is open, but there is nothing inside. (L1 used to end in the island too; it now runs on inside the bridge, rule 16.) | — | Carry L2 under the bridge and out across the east ravine, or give it a ramp up into the foot. |
 | Q | **White light seen through fog turns lilac.** There is no pale grey-blue step between haze 19 and white 47, so fogged white street lights in the deep city resolve to violet. | Accepted as the blue-white LED look of new districts; old districts use warm whites and ambers. | Spend a palette slot on a fogged white. |
 | R | **The third high road (H3) reads almost as a horizon line.** At that distance perspective flattens every route through it. | Lowered, and distant towers were allowed to grow taller so they break it into pieces. | Bring it nearer, or give it a visible climb (a ramp or spiral interchange). |
 
-| S | **The slit shows only from the right half of the hover range.** From the starting pose the island's east face is seen edge-on, and from the left it faces away. The face nearer the eye than z ≈ 48 is never in the picture at all. From the highest poses the slit is too foreshortened to see into. | L1 was brought into the island about 12 units nearer the bend than before, so its traffic shows along most of the stretch that can be seen (z 28–48; z 16–28 shows the lit lintel and the road curving in). | A second slit on the west face, for the left of the hover range. |
+| S | **The slit shows only from the right half of the hover range.** From the starting pose the island's east face is seen edge-on, and from the left it faces away. The face nearer the eye than z ≈ 48 is never in the picture at all. From the highest poses the slit is too foreshortened to see into. | L1 was brought into the island about 12 units nearer the bend than before, so its traffic shows along most of the stretch that can be seen (z 28–48; z 12–28 shows the lit lintel and the road curving in). | A second slit on the west face, for the left of the hover range. |
 | T | **Racers are small where they fly** (150–280 units from the eye, at the bottom of the fog). In a still picture they can be lost against the lit fog over the deep city; they read by moving. | Lights sized for the distance, a streak of hard light behind each, and less fog for them than they are really in (`fogK`). | A wider additive streak drawn in its own pass, or fewer, larger craft. |
+
+| U | **What shows under the bridge is mostly dark air.** The eye is always above the bridge, and the fog only thickens far down. So from the starting pose the hollow shows only on the left, where the shoulder was. It reads best from the raised and left poses, where the city far below shows through it. | The low traffic is put where the starting pose sees it, on the left. | Faintly lit haze at mid depth in the ravines and under the bridge, like the painting's grey void; that would change the look of every ravine, so try it on its own. |
 
 Resolved in revision 3:
 - **L.** The gold patch under the fog went with the fog rework (rule 12).
@@ -193,3 +211,4 @@ Resolved in revision 3:
 7. Build un-culled with `node build.js --nocull --out dist/nocull/index.html`. At two in-between poses it should differ from the culled build in under 0.1 % of pixels.
 8. Pose `1,0,6` at 960×540 shows the slit as a thin lit line along the island's east face under the main highway, with coloured traffic in it.
 9. Pose `0.5,0.8,4` at 960×540 shows cyan and pink streaks (racers) over the deep city in the east ravine. `node` and `src/campath.js` can project a lane's position at time t onto the screen when you need to find one.
+10. Pose `-1,0.3,15` at 1280×720 with `?art=720` shows the bridge standing over open air, L1 crossing to it, and the convoy in the west ravine below L1. Pose `-0.8,0.6,15` also shows the city far below through the opening.
